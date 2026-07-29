@@ -1,0 +1,33 @@
+metadata:
+  name: incident-investigator
+spec:
+  instructions: subagents/incident-investigator.instructions.md
+  handoffDescription: >-
+    Investigates PulseMart checkout HTTP 500 incidents by correlating
+    Application Insights, Log Analytics, and Azure resource state with the
+    connected GitHub source to find root cause, then recommends engaging the
+    rollback-advisor subagent for remediation.
+  # Live-verified 2026-07-29 against sre-agent-demo, right after
+  # infra/modules/sre_agent enabled experimentalSettings.EnableV2AgentLoop:
+  # once that flag is on, the agent runs in "workspace mode", and the
+  # data-plane PUT for this route rejects ANY new agent-to-agent handoff
+  # with "New agent-to-agent handoffs are not supported in workspace mode.
+  # Existing handoffs may only be retained or removed. Deliver cross-agent
+  # capabilities through skills and Task-based subagents instead." This is
+  # unconditional -- it is not about whether this specific pair had a
+  # handoff before; PUT-ing the exact same {name, target} pair fails
+  # identically the first time it is attempted under workspace mode. Left
+  # empty here per that error's own guidance; cross-subagent coordination is
+  # carried by instructions text and the shared `triage-checkout-failures`
+  # skill instead (see PLAN.md Milestone 4 "API/schema adaptations").
+  handoffs: []
+  tools:
+  - RunAzCliReadCommands
+  - QueryAppInsightsUsingAppId
+  - QueryLogAnalyticsByWorkspaceId
+  - SearchMemory
+  agentType: Autonomous
+  temperature: 0.2
+  enableSkills: true
+  allowedSkills:
+  - triage-checkout-failures

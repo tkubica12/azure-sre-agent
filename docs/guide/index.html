@@ -1,0 +1,1391 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Azure SRE Agent - presenter guide</title>
+<meta name="description" content="Detailed presenter runbook for the Azure SRE Agent PulseMart incident demonstration: commands, timing, talking points, and fallbacks." />
+<script src="../assets/js/theme-bootstrap.js"></script>
+<link rel="stylesheet" href="../assets/css/tokens.css" />
+<link rel="stylesheet" href="../assets/css/base.css" />
+<link rel="stylesheet" href="guide.css" />
+</head>
+<body class="guide-body">
+<a class="skip-link" href="#main-content">Skip to guide content</a>
+
+<div class="guide-topbar">
+  <span class="title">Azure SRE Agent - presenter guide</span>
+  <nav class="actions" aria-label="Guide actions">
+    <a class="btn" href="../slides/index.html">Open slides</a>
+    <button type="button" class="btn" data-theme-toggle aria-pressed="false">
+      <span data-theme-toggle-label>Dark mode</span>
+    </button>
+  </nav>
+</div>
+
+<div class="guide-shell">
+  <nav class="guide-toc" aria-label="Guide sections">
+    <h2>Run the demo</h2>
+    <ul>
+      <li><a href="#overview">Overview</a></li>
+      <li><a href="#prerequisites">Prerequisites</a></li>
+      <li><a href="#pre-show-checklist">Pre-show checklist</a></li>
+      <li><a href="#timing">Timing</a></li>
+      <li><a href="#beat-orient">1. Orient</a></li>
+      <li><a href="#beat-observe">2. Observe</a></li>
+      <li><a href="#beat-disrupt">3. Disrupt</a></li>
+      <li><a href="#beat-investigate">4. Investigate</a></li>
+      <li><a href="#beat-act">5. Act</a></li>
+      <li><a href="#beat-verify">6. Verify</a></li>
+      <li><a href="#beat-learn">7. Learn</a></li>
+    </ul>
+    <h2>Reference</h2>
+    <ul>
+      <li><a href="#architecture">Architecture</a></li>
+      <li><a href="#security-safety">Security and safety</a></li>
+      <li><a href="#cost">Cost</a></li>
+      <li><a href="#troubleshooting">Troubleshooting</a></li>
+      <li><a href="#cleanup">Cleanup</a></li>
+      <li><a href="#adoption">Adoption guidance</a></li>
+      <li><a href="#source-references">Source and references</a></li>
+    </ul>
+  </nav>
+
+  <main id="main-content" class="guide-main">
+
+    <section id="overview" class="doc-section">
+      <h1>Presenter guide</h1>
+      <p class="lead">This guide is written directly to you, the presenter.
+        Follow it top to bottom during rehearsal and during the live
+        session. It matches the exact scene order in
+        <a href="../../SPEC.md">SPEC.md</a> section 5 and the current
+        <a href="../../labctl/src/labctl/cli.py">labctl</a> command surface.</p>
+      <p>Environment used throughout this guide (illustrative values -
+        substitute your own subscription, tenant, and resource names before
+        rehearsing; every ID shown here is a placeholder, not a real
+        credential): subscription <strong>&lt;your-subscription&gt;</strong>
+        (<code>00000000-0000-0000-0000-000000000000</code>), region
+        <code>swedencentral</code>, agent
+        <code>sre-agent-demo</code> in <code>rg-sre-agent-demo</code>,
+        workload <strong>PulseMart</strong> in
+        <code>rg-sre-agent-workload-demo</code>.</p>
+      <div class="callout" role="note">
+        <p><strong>Honesty rule this guide follows throughout:</strong> no
+          command output, screenshot, or agent response appears here unless
+          it has been produced by a real run against this environment. Where
+          a result is still pending rehearsal capture, that is stated
+          explicitly instead of invented (see the <a href="#beat-investigate">Investigate</a>
+          beat).</p>
+      </div>
+    </section>
+
+    <section id="prerequisites" class="doc-section">
+      <h2>Prerequisites<a class="anchor-link" href="#prerequisites">#</a></h2>
+      <ul>
+        <li>Windows PowerShell (the supported operator platform).</li>
+        <li>Python 3.11+, with <code>labctl</code> installed in a virtual
+          environment (<code>labctl\.venv</code>).</li>
+        <li>Azure CLI, logged in (<code>az login</code>) to subscription
+          <strong>&lt;your-subscription&gt;</strong>.</li>
+        <li>GitHub CLI, logged in (<code>gh auth login</code>) with the
+          <code>repo</code> scope.</li>
+        <li><code>config.local.toml</code> present (copied from
+          <code>config.example.toml</code>, git-ignored).</li>
+      </ul>
+      <p>Confirm all of the above in one command before you touch anything
+        else, from the <strong>repository root</strong>:</p>
+      <pre><code>& 'labctl\.venv\Scripts\labctl.exe' preflight</code></pre>
+      <p><strong>Expected:</strong> a PASS/WARN/FAIL line per check and exit
+        code 0. This is read-only - safe to run at the start of every
+        rehearsal and immediately before the live session.</p>
+      <p>This guide uses <code>& 'labctl\.venv\Scripts\labctl.exe' &lt;command&gt;</code>
+        throughout - the exact invocation form tested on this platform. A
+        bare <code>.\labctl\.venv\Scripts\labctl.exe</code> works from
+        PowerShell too; the leading <code>&amp;</code> call operator is only
+        required if you assign the path to a variable first.</p>
+      <div class="callout" role="note">
+        <p><strong>Viewing these pages offline, reliably:</strong> opening
+          these files directly as <code>file://</code> URLs mostly works, but
+          browsers sandbox <code>localStorage</code> per-file in some
+          configurations, so a theme choice made in the slides may not carry
+          over to the guide. For a rehearsal-grade setup, serve
+          <code>docs/</code> over local HTTP instead - no internet access is
+          required or used:</p>
+        <pre><code>python -m http.server 8000 --directory docs</code></pre>
+        <p>then open <code>http://localhost:8000/slides/</code> and
+          <code>http://localhost:8000/guide/</code> in the same browser.</p>
+      </div>
+    </section>
+
+    <section id="pre-show-checklist" class="doc-section">
+      <h2>Pre-show checklist<a class="anchor-link" href="#pre-show-checklist">#</a></h2>
+      <p>Run this in full before any rehearsal or live session, in order, from
+        the <strong>repository root</strong> in Windows PowerShell. It is
+        written so a presenter who did not author this repository can execute
+        it without guessing.</p>
+      <ol>
+        <li>
+          <p><strong>Confirm the environment.</strong></p>
+          <pre><code>& 'labctl\.venv\Scripts\labctl.exe' preflight
+& 'labctl\.venv\Scripts\labctl.exe' verify</code></pre>
+          <p><strong>Known-good expectation:</strong> <code>preflight</code>
+            exits 0 with no FAIL rows; <code>verify</code> prints
+            <strong>28 passed, 0 warned, 0 failed</strong> and exits 0. If
+            your check count differs, the agent/workload configuration has
+            changed since this figure was recorded - read every non-PASS
+            line before proceeding; do not rehearse against a known-bad
+            baseline.</p>
+        </li>
+        <li>
+          <p><strong>Reset the scenario to a clean baseline.</strong></p>
+          <pre><code>& 'labctl\.venv\Scripts\labctl.exe' demo prepare bad-deployment</code></pre>
+          <p>Confirms (and restores, if needed) 100% traffic on the
+            known-good baseline revision and warms both
+            <code>/healthz</code> and <code>/api/checkout</code>, so the
+            first live request of the show is not a cold start.</p>
+        </li>
+        <li>
+          <p><strong>Pre-stage browser tabs</strong>, in this order, all
+            signed in to subscription <strong>&lt;your-subscription&gt;</strong> ahead of
+            time:</p>
+          <ol>
+            <li>The PulseMart HTTPS endpoint (checkout page).</li>
+            <li>Application Insights <code>appi-pulsemart-demo</code> -
+              Transaction search or Logs, ready to re-run a query.</li>
+            <li>Log Analytics <code>law-pulsemart-demo</code> - Logs, with the
+              KQL below already typed in but not yet run.</li>
+            <li>The Azure SRE Agent portal, agent <code>sre-agent-demo</code>
+              (replace the subscription-ID segment below with your own):
+              <code>https://sre.azure.com/#/agent/00000000-0000-0000-0000-000000000000/rg-sre-agent-demo/sre-agent-demo</code></li>
+            <li>The Azure Activity Log for
+              <code>rg-sre-agent-workload-demo</code>, filtered to
+              <code>Microsoft.App/containerApps</code> write operations.</li>
+          </ol>
+        </li>
+        <li>
+          <p><strong>Copyable KQL</strong> for the Observe and Verify beats
+            (Log Analytics, <code>law-pulsemart-demo</code>):</p>
+          <pre><code>ContainerAppConsoleLogs_CL
+| where TimeGenerated &gt; ago(30m)
+| where ContainerAppName_s =~ "ca-pulsemart-demo"
+| project TimeGenerated, RevisionName_s, Log_s
+| order by TimeGenerated desc
+| take 50</code></pre>
+        </li>
+        <li>
+          <p><strong>The exact grounded prompt to type at the agent</strong>
+            for the Observe beat's live query (type this verbatim so the
+            response is reproducibly grounded, not a leading question):</p>
+          <pre><code>Map the PulseMart application architecture, summarize checkout health over the last 30 minutes, and identify the currently active Container App revision.</code></pre>
+        </li>
+        <li>
+          <p><strong>Expected portal states before you start:</strong> agent
+            status Running; all three connectors (app-insights,
+            log-analytics, azure-monitor) Succeeded; no open incident thread;
+            <code>ca-pulsemart-demo</code> at 100% traffic on the baseline
+            revision; alert <code>alert-pulsemart-checkout-5xx</code> enabled
+            and not firing.</p>
+        </li>
+        <li>
+          <p><strong>Stop/go criteria.</strong> Go live only if every item
+            above is confirmed. If <code>labctl verify</code> reports any
+            FAIL, or the agent is not <code>Running</code>, or a connector is
+            not <code>Succeeded</code>: stop, fix it, and re-run this
+            checklist from the top - do not attempt to narrate around a
+            broken baseline live.</p>
+        </li>
+      </ol>
+    </section>
+
+    <section id="timing" class="doc-section">
+      <h2>Timing<a class="anchor-link" href="#timing">#</a></h2>
+      <p>Total run time: roughly <strong>36 minutes median</strong>, up to
+        about <strong>49 minutes worst case</strong>. Disrupt, Investigate,
+        and Act are backed by real, complete, <strong>three-run</strong>
+        measured data, including a full destroy-and-rebuild rerun on a
+        brand-new environment that surfaced real timing drift (see
+        <a href="../../scenarios/bad-deployment/evidence/act-beat-transcript-2026-07-29.md">the
+        full verbatim transcripts and timing evidence for all three runs</a>).
+        The honest range for the automated incident cycle itself - trigger to
+        the agent's own resolution report, with no human step in between -
+        is <strong>roughly 12-18 minutes across three real runs, median
+        ~13 minutes (13m15s), worst case observed 17m35s</strong>. Budget for
+        the long end, not the fast one: the table below marks each row
+        <strong>Measured</strong> (all three real runs cited by timestamp) or
+        <strong>Pending rehearsal confirmation</strong> (a planning estimate
+        for beats that do not depend on the agent) - never both, and never
+        invented.</p>
+      <table>
+        <thead><tr><th>Segment</th><th>Median</th><th>Worst case</th><th>Source</th></tr></thead>
+        <tbody>
+          <tr><td>Why Azure SRE Agent</td><td>3 min</td><td>4 min</td><td>Pending rehearsal confirmation</td></tr>
+          <tr><td>Architecture and controls</td><td>4 min</td><td>5 min</td><td>Pending rehearsal confirmation</td></tr>
+          <tr><td>Healthy system exploration (Observe)</td><td>6 min</td><td>8 min</td><td>Pending rehearsal confirmation</td></tr>
+          <tr><td>Disrupt (trigger fault, wait for alert)</td><td>5 min</td><td>7 min</td><td>Measured, all three runs: trigger-to-fired took <strong>260s, 260s, and 310s (5m10s)</strong> - the rebuilt-environment run was the slowest; budget adds command/narration overhead on top of the raw measurement</td></tr>
+          <tr><td>Investigate (automated investigation)</td><td>6 min</td><td>10 min</td><td>Measured, all three runs: alert-to-thread 60s/67s/47s + thread-to-report 180s/181s/<strong>383s (6m23s)</strong> - run 3's investigation ran more than twice as long as runs 1-2 (see the Investigate beat for the two root-caused reasons); budget adds time to read findings aloud</td></tr>
+          <tr><td>Act and Verify (agent executes, presenter confirms via Activity Log)</td><td>7 min</td><td>9 min</td><td>Measured, all three runs: investigation-to-rollback 74s/92s/64s + rollback-to-resolution 195s/198s/<strong>250s (4m10s)</strong> - the rollback itself was never the slow part, only the agent's post-rollback narration (see the Act beat); budget adds the presenter's own Activity Log walkthrough and <code>demo verify</code></td></tr>
+          <tr><td>Extensibility and cost (Learn)</td><td>3 min</td><td>4 min</td><td>Pending rehearsal confirmation</td></tr>
+          <tr><td>Adoption guidance</td><td>2 min</td><td>2 min</td><td>Pending rehearsal confirmation</td></tr>
+        </tbody>
+      </table>
+      <div class="callout" role="note">
+        <p><strong>Hard timebox for Disrupt/Investigate/Act combined:</strong>
+          budget 18 minutes as the plan (measured raw total across three real
+          runs: <strong>12m21s, 13m15s, and 17m35s</strong>, median 13m15s,
+          from trigger to the agent's own resolution summary), but do not let
+          it silently run past <strong>30 minutes</strong> from the moment you
+          run <code>demo trigger</code> - this is a wider margin than before,
+          specifically because the rebuilt-environment run showed real
+          variance a two-run sample did not. If the alert has not fired by
+          minute 9, or the agent has not executed the rollback within a few
+          minutes of a clear investigation conclusion: say so plainly, run
+          <code>demo reset bad-deployment</code> yourself as the operator
+          safety net (this is exactly what it is for - see the
+          <a href="#beat-act">Act</a> beat), narrate that explicitly as a
+          fallback rather than the intended path, and continue the rest of
+          the agenda. Never fabricate a result to stay on schedule.</p>
+      </div>
+      <p>The measured total (12m21s-17m35s across three runs) is the agent's
+        own raw, unattended working time - alert to its own resolution
+        report, with no human step in between. The planned 18-minute budget
+        above adds realistic presenter narration time on top for a live
+        audience (reading the investigation aloud, then independently
+        confirming the Activity Log rather than just trusting the agent's
+        narrative), which is why it is higher than the raw measured numbers.
+        <strong>Investigate and the tail of Act (the agent's own resolution
+        narration) are the two least predictable beats</strong> - both showed
+        their slowest measurement on the same rebuilt-environment run, for
+        reasons that are known and root-caused, not mysterious; see those
+        beats for exactly what to say if it happens to you live.</p>
+    </section>
+
+    <!-- ================= BEAT: ORIENT ================= -->
+    <section id="beat-orient" class="beat">
+      <h2>1. Orient<a class="anchor-link" href="#beat-orient">#</a></h2>
+      <div class="beat-meta">
+        <span class="chip chip--accent">~3-4 min</span>
+        <span class="chip">Segment: Why Azure SRE Agent + Architecture</span>
+      </div>
+      <div class="beat-grid">
+        <div>
+          <h3>Objective</h3>
+          <p>Explain the workload, telemetry, agent scope, permissions, and
+            safety model before showing anything live.</p>
+        </div>
+        <div>
+          <h3>Talking points</h3>
+          <ul>
+            <li>PulseMart is a real FastAPI checkout service on Azure
+              Container Apps, instrumented with OpenTelemetry.</li>
+            <li>The agent is deployed with <code>accessLevel: High</code> and
+              <code>actionMode: Review</code>, which by design is meant to
+              prompt only for Azure infrastructure write operations -
+              read-only investigation is never gated. Say what happened when
+              this repository tested that live in the <a href="#beat-act">Act</a>
+              beat, not here; do not resolve it early.</li>
+            <li>RBAC is least-privilege: see <a href="#security-safety">Security
+              and safety</a> for the exact table.</li>
+            <li>Two resource groups keep the agent and the workload separate
+              for cost and cleanup clarity - see <a href="#architecture">Architecture</a>.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Command</h3>
+          <pre><code>& 'labctl\.venv\Scripts\labctl.exe' status</code></pre>
+          <p><strong>Expected visible state:</strong> workload deployed
+            (endpoint, Container App, ACR, image tag, baseline revision);
+            agent Running, access High, mode Review, model
+            Anthropic/Automatic, connectors Succeeded; portal deep links for
+            both resource groups.</p>
+        </div>
+        <div>
+          <h3>Transition cue</h3>
+          <p>"Let's see the healthy system this agent is watching."
+            Move to <a href="#beat-observe">Observe</a>.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= BEAT: OBSERVE ================= -->
+    <section id="beat-observe" class="beat">
+      <h2>2. Observe<a class="anchor-link" href="#beat-observe">#</a></h2>
+      <div class="beat-meta">
+        <span class="chip chip--accent">~6 min (worst case 8)</span>
+        <span class="chip">Segment: Healthy system exploration</span>
+      </div>
+      <div class="beat-grid">
+        <div>
+          <h3>Objective</h3>
+          <p>Show the healthy application and its baseline telemetry, then
+            let the agent describe it back to you unprompted by any
+            incident.</p>
+        </div>
+        <div>
+          <h3>Talking points</h3>
+          <ul>
+            <li>Open the PulseMart HTTPS endpoint and complete a checkout
+              (~1 min).</li>
+            <li>Point out the active revision and 100% traffic weight on the
+              status page.</li>
+            <li>Open Application Insights <code>appi-pulsemart-demo</code>
+              (~1.5 min): request success rate, latency, and nested checkout /
+              inventory.check / payment.charge spans.</li>
+            <li>Open Log Analytics <code>law-pulsemart-demo</code> (~1.5 min):
+              run the copyable KQL from the <a href="#pre-show-checklist">pre-show
+              checklist</a> and show it returning rows.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Command</h3>
+          <pre><code>& 'labctl\.venv\Scripts\labctl.exe' verify</code></pre>
+          <p><strong>Expected:</strong> HTTP 200 on <code>/healthz</code> and
+            <code>/api/checkout</code>, Multiple revision mode confirmed,
+            100% traffic on the known-good revision, real telemetry rows in
+            both Log Analytics and Application Insights, the metric alert
+            enabled and not currently fired, and every agent check passing.</p>
+        </div>
+        <div>
+          <h3>Live: ask the agent (grounded exploration, ~2 min)</h3>
+          <p>In the agent portal (deep link below - replace the
+            subscription-ID segment with your own), type the exact grounded
+            prompt from the <a href="#pre-show-checklist">pre-show
+            checklist</a> verbatim. Read the response aloud from the portal -
+            do not paraphrase from memory.</p>
+          <p><code>https://sre.azure.com/#/agent/00000000-0000-0000-0000-000000000000/rg-sre-agent-demo/sre-agent-demo</code></p>
+          <p><strong>Expected visible state:</strong> a response citing
+            Application Insights, Log Analytics, and/or source files - proof
+            of read-only grounded investigation before any incident exists.</p>
+        </div>
+        <div>
+          <h3>Fallback</h3>
+          <p>If the endpoint is cold (Container Apps scale-to-zero), reload
+            once and narrate the brief warm-up latency as expected
+            behavior, not a fault. If the agent's answer is slow, this is
+            normal for a first grounded query in a session; keep talking
+            about the architecture slide while you wait rather than going
+            silent.</p>
+        </div>
+        <div>
+          <h3>Transition cue</h3>
+          <p>"Now let's give it something to actually investigate."
+            Move to <a href="#beat-disrupt">Disrupt</a>.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= BEAT: DISRUPT ================= -->
+    <section id="beat-disrupt" class="beat">
+      <h2>3. Disrupt<a class="anchor-link" href="#beat-disrupt">#</a></h2>
+      <div class="beat-meta">
+        <span class="chip chip--accent">~5 min (worst case 7)</span>
+        <span class="chip">Segment: Trigger and automated investigation</span>
+      </div>
+      <div class="beat-grid">
+        <div>
+          <h3>Objective</h3>
+          <p>Inject a controlled, reversible, production-like fault and
+            generate enough real traffic to cross the alert threshold.</p>
+        </div>
+        <div>
+          <h3>Talking points</h3>
+          <ul>
+            <li>The <code>bad-deployment</code> scenario creates a new
+              Container Apps revision from the same immutable image with
+              <code>DEMO_FAILURE_MODE=checkout-500</code> and shifts
+              production traffic to it.</li>
+            <li>Multiple revision mode keeps the known-good revision
+              available the whole time - nothing is deleted.</li>
+            <li>No customer or persistent data is touched; the fault only
+              changes checkout behavior and emits structured telemetry.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Command</h3>
+          <pre><code>& 'labctl\.venv\Scripts\labctl.exe' demo trigger bad-deployment</code></pre>
+          <p><strong>Expected visible state:</strong> the failing revision is
+            created and receives production traffic, synthetic checkout load
+            runs, and checkout requests visibly start returning HTTP 500
+            within roughly a minute of the command completing.</p>
+        </div>
+        <div>
+          <h3>Real measured alert latency</h3>
+          <p>The Azure Monitor rule evaluates every minute over a trailing
+            5-minute window, so it can only fire on an evaluation boundary -
+            the scenario's own honest range is 1-6 minutes, with an 8-minute
+            bounded poll deadline before <code>demo trigger</code> stops
+            waiting (it still exits 0 if the checkout failures themselves are
+            confirmed live). All three real end-to-end runs captured in
+            <a href="../../scenarios/bad-deployment/evidence/act-beat-transcript-2026-07-29.md">the
+            Act-beat evidence</a> measured trigger-to-fired at <strong>260
+            seconds, 260 seconds, and 310 seconds (5m10s)</strong> - the third
+            run, against a completely rebuilt environment, was the slowest;
+            an earlier, separate test cycle recorded in PLAN.md Milestone 5
+            took over 8 minutes. Plan for the slow end, not the fast one.</p>
+        </div>
+        <div>
+          <h3>Fallback</h3>
+          <p>If the alert has not fired within <code>alert.max_wait_seconds</code>,
+            <code>demo trigger</code> still exits 0 as long as the checkout
+            requests themselves failed - the fault is genuinely live either
+            way. Re-run <code>& 'labctl\.venv\Scripts\labctl.exe' demo verify
+            bad-deployment</code> a few minutes later, or drive more load with
+            another <code>demo trigger bad-deployment</code> call (idempotent
+            - reuses the existing fault revision) rather than waiting in
+            silence. See the <a href="#timing">Timing</a> section's hard
+            timebox for when to stop waiting and move on.</p>
+        </div>
+        <div>
+          <h3>Transition cue</h3>
+          <p>Refresh the Application Insights view from
+            <a href="#beat-observe">Observe</a> live, side by side with the
+            new failures, then move to <a href="#beat-investigate">Investigate</a>.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= BEAT: INVESTIGATE ================= -->
+    <section id="beat-investigate" class="beat">
+      <h2>4. Investigate<a class="anchor-link" href="#beat-investigate">#</a></h2>
+      <div class="beat-meta">
+        <span class="chip chip--accent">~6 min (worst case 10)</span>
+        <span class="chip">Segment: Trigger and automated investigation</span>
+      </div>
+      <div class="beat-grid">
+        <div>
+          <h3>Objective</h3>
+          <p>Let the agent correlate resources, logs, metrics, alerts,
+            source, and operational knowledge, unattended, and produce a
+            grounded root-cause hypothesis.</p>
+        </div>
+        <div>
+          <h3>Talking points</h3>
+          <ul>
+            <li>The fired alert routes through the <code>AzMonitor</code>
+              incident platform and the <code>checkout-5xx</code> response
+              plan straight to the <code>incident-investigator</code>
+              subagent - no human opened a ticket.</li>
+            <li>It is grounded in the uploaded checkout-500 runbook, the
+              connected <code>tkubica12/azure-sre-agent</code> repository,
+              the <code>triage-checkout-failures</code> skill, and the
+              <code>investigation-guidelines</code>/<code>safety-rules</code>
+              common prompts.</li>
+            <li>It queries Application Insights and Log Analytics directly
+              and correlates the failure with the new revision's
+              configuration change.</li>
+            <li><code>incident-investigator</code> holds no
+              <code>RunAzCliWriteCommands</code> tool at all - it is
+              structurally incapable of mutating anything. There is
+              <strong>no platform hand-off</strong> to
+              <code>rollback-advisor</code> either - this agent's workspace
+              mode rejects new agent-to-agent hand-offs outright
+              (live-verified; see PLAN.md Milestone 4;
+              <code>handoffs: []</code> in both subagents' configuration).
+              What actually happens is narrower than either extreme: its
+              written findings conclude with an explicit recommendation to
+              engage <code>rollback-advisor</code>, naming the known-good
+              revision, and that recommendation drives a Task-based subagent
+              invocation within the same run - not a configured platform
+              hand-off, and not a second human-initiated request either.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Real measured duration - three runs, not two</h3>
+          <p>Alert fired to investigation thread created:
+            <strong>60s, 67s, and 47s</strong> across all three real runs (the
+            rebuilt-environment run was actually the fastest here). Thread
+            created to investigation report posted:
+            <strong>180s, 181s, and 383s (6m23s)</strong> - the third run,
+            against a completely rebuilt environment, took more than twice as
+            long as the first two. This is a real, measured, root-caused
+            result (see PLAN.md's timing-drift record and
+            <a href="../../scenarios/bad-deployment/evidence/act-beat-transcript-2026-07-29.md">the
+            verbatim runs 1-2 transcript</a>), not noise - do not present the
+            faster two-run figures as typical.</p>
+        </div>
+        <div class="callout" role="note">
+          <p><strong>Investigate is the least predictable beat in this demo.
+            Plan for it, and turn it into content if it happens to you
+            live.</strong> On the rebuilt-environment run, the investigation
+            ran long for two known, root-caused reasons:</p>
+          <ul>
+            <li>Three <code>az containerapp</code> CLI calls returned
+              "Unknown error occurred"; the agent recovered by querying Azure
+              Resource Graph and <code>az rest</code> instead, and it also
+              initially queried Log Analytics with the wrong ID (the
+              Application Insights app ID instead of the workspace ID) and
+              self-corrected.</li>
+            <li>Every attempt to read the application source
+              (<code>app/pulsemart/main.py</code>,
+              <code>app/pulsemart/settings.py</code>) from the connected
+              GitHub repository failed, because <code>origin/main</code>
+              currently contains only <code>AGENTS.md</code>,
+              <code>LICENSE</code>, and <code>README.md</code> - the app
+              source was never actually committed and pushed. The agent
+              recovered by relying on its uploaded operational knowledge
+              documents instead and still produced an accurate,
+              well-evidenced report.</li>
+          </ul>
+          <p>If you see the agent's live output pause, retry, or visibly
+            switch tools mid-investigation, <strong>say so</strong> instead of
+            going quiet: "watch - that CLI call just failed, and it's
+            recovering by switching to Azure Resource Graph" is a genuine
+            credibility moment, not something to hide. This is expected to
+            improve once the application source is actually committed and
+            pushed to the connected repository - but no faster number has
+            been measured yet, so do not promise a specific improved time;
+            keep using the documented 12-18 minute range until a faster run
+            is actually recorded.</p>
+        </div>
+        <div>
+          <h3>Expected visible state</h3>
+          <p>An open incident in the agent portal progressing through an
+            investigation, ending in a written root-cause hypothesis that
+            names the failing revision and recommends engaging
+            <code>rollback-advisor</code> to shift traffic back to the
+            known-good one.</p>
+        </div>
+        <div class="callout" role="note">
+          <p><strong>Real investigation report excerpt</strong> (Run 2,
+            incident thread <code>&lt;incident-thread-id-2&gt;</code>,
+            verbatim from the data-plane API, 2026-07-29 - full text with both
+            runs in
+            <a href="../../scenarios/bad-deployment/evidence/act-beat-transcript-2026-07-29.md">the
+            evidence file</a>):</p>
+          <blockquote>
+            <p>"<strong>Affected scope:</strong> <code>POST /api/checkout</code>
+              on Container App <code>ca-pulsemart-demo</code>. 100% of ingress
+              traffic is routed to the failing revision
+              <code>ca-pulsemart-demo--fault-1785338532</code>.
+              <code>GET /healthz</code> and <code>GET /api/status</code>
+              remain healthy."</p>
+            <p>"41 HTTP 5xx responses recorded in the 1-minute bucket at
+              <code>15:24:00Z</code>, with zero 5xx before or after in
+              adjacent buckets - aligning precisely with when the fault
+              revision started serving traffic." ... "20+ ERROR-level log
+              entries from revision
+              <code>ca-pulsemart-demo--fault-1785338532</code> between
+              <code>15:23:16Z</code> and <code>15:23:21Z</code>, each
+              containing: 'checkout failed: payment gateway returned an
+              unexpected error (demo failure mode: checkout-500)'."</p>
+            <p>"When <code>DEMO_FAILURE_MODE=checkout-500</code>, the
+              <code>_charge_payment</code> function raises
+              <code>CheckoutFailure</code> in the <code>payment.charge</code>
+              dependency span, while <code>inventory.check</code> succeeds.
+              This is the only code path that produces the observed error
+              message." (cross-referenced against
+              <code>app/pulsemart/main.py</code> and
+              <code>app/pulsemart/settings.py</code> in the connected
+              repository)</p>
+            <p>"<strong>Confidence: High.</strong> ... All evidence - timing,
+              error message, env var, metrics spike, and source code -
+              converges on a single explanation. No other failure mode or
+              resource-health issue is involved."</p>
+          </blockquote>
+          <p>Read excerpts like these aloud from the live portal during the
+            real session - this block exists so you know, in advance, the
+            calibre of evidence to expect and can quote it accurately
+            afterward; it is not a substitute for watching it happen live.</p>
+        </div>
+        <div>
+          <h3>Fallback</h3>
+          <p>Investigation time is not fully deterministic. If it is taking
+            longer than expected, narrate what you already know is
+            grounding it (the runbook, the connectors, the source repo) from
+            the <a href="#architecture">Architecture</a> section while it
+            finishes, rather than filling time with speculation about its
+            answer.</p>
+        </div>
+        <div>
+          <h3>Transition cue</h3>
+          <p>"It found the cause and recommended a fix, in writing. Now watch
+            what it does next - and let me be straight with you about why."
+            Move to <a href="#beat-act">Act</a>.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= BEAT: ACT ================= -->
+    <section id="beat-act" class="beat">
+      <h2>5. Act<a class="anchor-link" href="#beat-act">#</a></h2>
+      <div class="beat-meta">
+        <span class="chip chip--accent">~7 min (worst case 9)</span>
+        <span class="chip">Segment: Remediate and verify</span>
+      </div>
+      <div class="beat-grid">
+        <div>
+          <h3>Objective</h3>
+          <p>Give an honest, non-defensive account of what live testing
+            found about this preview build's approval gate, show what
+            actually governs remediation in this demo (tool scoping plus
+            narrow RBAC - now proven, not pending), and watch the agent
+            execute the real rollback itself, under its own identity, then
+            independently confirm that from the Azure Activity Log.</p>
+        </div>
+        <div>
+          <h3>What we found: the Review-mode gate did not hold</h3>
+          <div class="callout" role="note">
+            <p><strong>Live-tested against <code>sre-agent-demo</code>,
+              2026-07-29, across three independent test cycles.</strong> The
+              agent-wide <code>actionConfiguration.mode</code> stays at its
+              documented default of <code>Review</code>, and a pre-tool hook
+              (<code>require-approval-for-changes</code>) requests human
+              approval before any restart, scale, or traffic-changing
+              operation. In practice, the mutating
+              <code>az containerapp ingress traffic set</code> command ran
+              for real seconds after the agent decided to run it, on every
+              cycle tried with a write-capable tool present -
+              <code>GET /api/v1/approvals/{threadId}</code> stayed empty
+              throughout, and every message's approval/hook fields stayed
+              null. One of those cycles used a freshly created incident
+              thread whose own <code>agentMode</code> field read
+              <code>"Review"</code> at investigation time - so this was not
+              a stale or misconfigured thread.</p>
+            <p>The obvious explanation - that the agent's own identity was
+              approving its own action - was tested by removing its "SRE
+              Agent Administrator" role entirely. The gate still did not
+              hold; that theory is disproven. The most likely root cause: this
+              preview data-plane API silently drops a hook's enforcement
+              fields (<code>permissionDecision</code>/<code>enabled</code>,
+              or <code>failMode</code>/<code>maxRejections</code> on an
+              alternate hook shape also tried) when the hook is saved, so
+              the hook is never actually evaluated as configured. No hook
+              shape this repository tried reliably blocks a write in this API
+              version. Full evidence trail: PLAN.md Milestone 5, SPEC.md
+              section 5 Scene 5, and the
+              <a href="../../scenarios/bad-deployment/evidence/act-beat-transcript-2026-07-29.md">2026-07-29
+              Act-beat evidence file</a>.</p>
+          </div>
+          <p>Say this on stage exactly this plainly. Do not soften it to
+            "sometimes" - across every real attempt, the gate did not hold.
+            This is not a configuration mistake in this repository; it is a
+            behavior of the preview product surface. Because no build of this
+            preview actually honors <code>Review</code> here, the
+            <code>checkout-5xx</code> response plan is configured
+            <code>agentMode: Autonomous</code> - the honest label for what
+            has always actually happened, not a description of intent that
+            was never true.</p>
+        </div>
+        <div>
+          <h3>What actually governs this demo: tool scoping and narrow RBAC - proven</h3>
+          <p><code>incident-investigator</code> (the subagent that receives
+            the routed incident) holds no <code>RunAzCliWriteCommands</code>
+            tool at all and is structurally incapable of mutating anything -
+            it can only investigate and recommend, in writing.
+            <code>rollback-advisor</code> is the <strong>only</strong>
+            subagent in <code>agent/</code> that holds
+            <code>RunAzCliWriteCommands</code>, and its managed identity's
+            only write-capable RBAC grant is "Container Apps Contributor"
+            scoped to just the <code>ca-pulsemart-demo</code> resource, not
+            Contributor over the resource group. This built-in role's entire
+            action set is <code>Microsoft.App/*</code> and
+            <code>Microsoft.Insights/alertRules/*</code> - there is no
+            <code>Microsoft.Resources/*</code> action anywhere in it, so a
+            write against any other resource in
+            <code>rg-sre-agent-workload-demo</code> (Log Analytics, the
+            container registry, the alert rule, the resource group itself)
+            fails with <code>AuthorizationFailed</code> regardless of what the
+            model decides to try.</p>
+          <p>This was <strong>live-proven, not just asserted</strong>: an ad
+            hoc probe asked the live agent to attempt an out-of-scope write
+            (<code>az group update ... --set tags.rbac-scope-test=true</code>,
+            deliberately outside <code>rollback-advisor</code>'s Container
+            App-only remit). <code>rollback-advisor</code> refused and made
+            zero tool calls, citing its own scope; a follow-up asking it to
+            bypass that refusal "for this one authorized test" was refused a
+            second time. The RBAC-layer claim is independently, structurally
+            verified regardless of that instruction-layer result: the role
+            definition's <code>actions</code> list has no path to
+            <code>Microsoft.Resources</code>. Across all three real
+            rollbacks - both in
+            <a href="../../scenarios/bad-deployment/evidence/act-beat-transcript-2026-07-29.md">the
+            2026-07-29 evidence file</a> and the third, on a completely
+            rebuilt environment, recorded in PLAN.md - the in-scope write
+            succeeded with <strong>zero <code>AuthorizationFailed</code>
+            errors</strong> - the narrow RBAC grant
+            (<code>workload_access_level = "narrow"</code>,
+            <code>grant_uami_agent_administrator = false</code>) is confirmed
+            sufficient, not pending, on two independently built environments.
+            <code>deny-destructive-deletes</code> and
+            <code>require-approval-for-changes</code> remain configured as
+            documented intent - harmless, and they will start working
+            automatically if Microsoft fixes the underlying platform defect -
+            but tool scoping and narrow RBAC are what this demonstration
+            actually, provenly relies on.</p>
+        </div>
+        <div>
+          <h3>Live: watch the agent remediate</h3>
+          <p>Watch the incident thread (portal, or
+            <code>demo verify bad-deployment</code>). Narrate each step as it
+            happens: <code>rollback-advisor</code> states the exact
+            <code>az containerapp ingress traffic set</code> command it is
+            about to run, in the thread, before running it; it then executes
+            that command for real, under its own managed identity; then it
+            verifies the traffic split, the checkout response, and the alert
+            state, and reports the outcome. <strong>You do not run anything
+            yourself in this step</strong> - your role is to narrate what the
+            agent is doing and about to prove.</p>
+          <pre><code>& 'labctl\.venv\Scripts\labctl.exe' status</code></pre>
+          <p>Run this beforehand (or reuse the Orient beat's output) to have
+            the agent's managed identity's principal ID on screen, ready to
+            compare against the Activity Log next.</p>
+        </div>
+        <div class="callout" role="note">
+          <p><strong>The narration after the rollback, not the rollback
+            itself, is the unpredictable part - and this is already
+            root-caused too.</strong> On the rebuilt-environment run, the
+            real traffic-shift write succeeded on schedule, but
+            <code>rollback-advisor</code> then hit its own turn limit mid
+            verification (its own message: "The rollback-advisor reached its
+            turn limit"). The parent agent independently re-verified the
+            traffic state via <code>az rest</code> before posting the final
+            resolution summary, which took longer to appear as a result. If
+            the resolution message is slow to show up, the mitigation has
+            almost certainly already happened - say exactly that: "the
+            traffic shift is done; the agent is still confirming and writing
+            up its summary" and check <code>demo verify bad-deployment</code>
+            or the Container App's traffic split directly rather than waiting
+            on the narrative text.</p>
+        </div>
+        <div>
+          <h3>Expected visible state - the real proof point</h3>
+          <p>Container Apps traffic shifts back to the known-good revision -
+            a real control-plane operation performed by the agent. Then open
+            the Azure Activity Log for <code>rg-sre-agent-workload-demo</code>,
+            filtered to <code>Microsoft.App/containerApps</code> write
+            operations, and show its <code>caller</code> field: it names the
+            agent's own user-assigned managed identity principal ID - not your
+            own signed-in account, and not <code>labctl</code>'s Azure CLI
+            session. In the 2026-07-29 evidence, both of the first two
+            rollbacks show a real
+            <code>Microsoft.App/containerApps/write</code> event
+            <strong>4-5 seconds</strong> after the agent's own tool-call
+            timestamp, with <code>caller</code> = the agent's UAMI principal
+            ID both times, interleaved in the same log with
+            operator-caller (<code>operator@example.com</code>) writes for
+            <code>trigger</code>/<code>reset</code> - the two are clearly
+            distinguishable by <code>caller</code> alone. The rebuilt-
+            environment third run independently confirmed the same
+            attribution pattern on a brand-new agent identity (a different
+            UAMI principal ID than the first two runs, discovered fresh
+            against the new environment, not assumed from the old one) - this
+            is the beat's real, verifiable proof point: not a portal click, an
+            audit record of exactly who changed production and when.</p>
+        </div>
+        <div>
+          <h3>Fallback</h3>
+          <p>If the agent has not executed the rollback within a few minutes
+            of a clear investigation conclusion, do not wait indefinitely: run
+            <code>demo reset bad-deployment</code> yourself as the operator
+            safety net, and narrate that explicitly as a fallback, not as the
+            intended path - <strong>this is no longer the demo's Act-beat
+            mitigation step</strong>, it is the reliable way back to baseline
+            when something upstream did not complete. Either way, always
+            independently confirm from the Activity Log's <code>caller</code>
+            field who actually made the change, rather than trusting the
+            agent's own self-reported narrative alone.</p>
+        </div>
+        <div>
+          <h3>Transition cue</h3>
+          <p>"The agent made the change. Its own account of that doesn't
+            prove it worked - let's check independently." Move
+            to <a href="#beat-verify">Verify</a>.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= BEAT: VERIFY ================= -->
+    <section id="beat-verify" class="beat">
+      <h2>6. Verify<a class="anchor-link" href="#beat-verify">#</a></h2>
+      <div class="beat-meta">
+        <span class="chip chip--accent">~part of 7 min</span>
+        <span class="chip">Segment: Remediate and verify</span>
+      </div>
+      <div class="beat-grid">
+        <div>
+          <h3>Objective</h3>
+          <p>Prove recovery with both an automated check and a user-visible
+            check - never declare success from the agent's own claim alone
+            (AGENTS.md, "Real workload and incidents").</p>
+        </div>
+        <div>
+          <h3>Command</h3>
+          <pre><code>& 'labctl\.venv\Scripts\labctl.exe' demo verify bad-deployment</code></pre>
+          <p><strong>Expected</strong> (per SPEC.md section 5, scene 6 -
+            confirm exact console output against your build during
+            rehearsal): the checkout user journey succeeds, production
+            traffic targets the known-good revision, the failure rate is
+            back below the alert threshold, the alert has resolved or shows
+            recovery telemetry, and the incident record contains a
+            remediation summary.</p>
+        </div>
+        <div>
+          <h3>Live cross-check</h3>
+          <ul>
+            <li>Complete a checkout in the browser tab - it should succeed.</li>
+            <li>Refresh the Application Insights view from
+              <a href="#beat-observe">Observe</a> - failures should stop and
+              success rate should return to baseline.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Fallback</h3>
+          <p>If recovery telemetry lags, remember ingestion can take a
+            minute or two (the same bounded-retry behavior
+            <code>labctl verify</code> already uses for the healthy path).
+            Wait briefly and re-run the command before assuming something
+            failed. If traffic did not actually shift, run
+            <code>demo reset bad-deployment</code> yourself as the operator
+            safety net (it is safe to run any time) and explain the detour
+            honestly to the room - the agent's rollback attempt not
+            completing is the scenario this command exists for.</p>
+        </div>
+        <div>
+          <h3>Transition cue</h3>
+          <p>"One agent, one environment - here's everything else it's
+            already doing for you." Move to <a href="#beat-learn">Learn</a>.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= BEAT: LEARN ================= -->
+    <section id="beat-learn" class="beat">
+      <h2>7. Learn<a class="anchor-link" href="#beat-learn">#</a></h2>
+      <div class="beat-meta">
+        <span class="chip chip--accent">~3 min (worst case 4)</span>
+        <span class="chip">Segment: Extensibility and cost</span>
+      </div>
+      <div class="beat-grid">
+        <div>
+          <h3>Objective</h3>
+          <p>Show the incident record, audit evidence, durable knowledge,
+            and automation opportunities - reusing the same environment, not
+            a new deployment.</p>
+        </div>
+        <div>
+          <h3>Talking points</h3>
+          <ul>
+            <li>Skills and subagents: <code>triage-checkout-failures</code>,
+              <code>incident-investigator</code>, <code>rollback-advisor</code>.</li>
+            <li>Guardrails: hooks <code>require-approval-for-changes</code>
+              and <code>deny-destructive-deletes</code> - documented intent,
+              not the operative gate; see <a href="#beat-act">Act</a>.</li>
+            <li>Common prompts <code>investigation-guidelines</code> and
+              <code>safety-rules</code>.</li>
+            <li>Scheduled task <code>daily-reliability-summary</code> - label
+              this explicitly as needing elapsed time/a prior scheduled run
+              to show a populated result (AGENTS.md requires labeling
+              time-dependent features honestly).</li>
+            <li>This incident's own knowledge documents were uploaded to the
+              agent's memory during <code>labctl provision</code>. Whether a
+              <em>future</em> incident's investigation actually retrieves and
+              cites them depends on this preview build's memory-search
+              indexing having completed and been confirmed working -
+              <strong>not yet independently verified end to end</strong> as
+              of this guide's last edit. Say "uploaded, pending confirmed
+              retrieval" rather than "retained for next time" until that is
+              tested.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Command</h3>
+          <pre><code>& 'labctl\.venv\Scripts\labctl.exe' status</code></pre>
+          <p>The same command from <a href="#beat-orient">Orient</a> -
+            deliberately bookend the demo with it. Now it additionally shows
+            the agent still running and still billing always-on AAUs; see
+            <a href="#cost">Cost</a>.</p>
+        </div>
+        <div>
+          <h3>Evidence (optional, time permitting)</h3>
+          <pre><code>& 'labctl\.venv\Scripts\labctl.exe' evidence collect</code></pre>
+          <p>Saves redacted JSON, logs, KQL results, alert state, and
+            revision state locally under <code>.evidence/&lt;timestamp&gt;/</code>
+            for later review - never committed, never shown with secrets.</p>
+        </div>
+        <div>
+          <h3>Transition cue</h3>
+          <p>Move to <a href="#adoption">Adoption guidance</a> to close.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= REFERENCE: ARCHITECTURE ================= -->
+    <section id="architecture" class="doc-section">
+      <h2>Architecture<a class="anchor-link" href="#architecture">#</a></h2>
+      <p>Full narrative and rationale: <a href="../../SPEC.md">SPEC.md</a>
+        sections 6-8. This is the complete resource-by-resource topology; the
+        slide deck shows a simplified five-node version of the same picture
+        for room-distance readability - this is the detailed reference to
+        return to if anyone asks. Summary diagram:</p>
+      <div class="diagram-wrap" style="max-width: 100%;">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 640" role="img"
+     aria-labelledby="arch-title arch-desc" class="architecture-diagram">
+  <title id="arch-title">Azure SRE Agent demonstration architecture</title>
+  <desc id="arch-desc">
+    The presenter drives labctl, a Python CLI, which applies Terraform to two
+    resource groups, runs an ACR cloud build, and calls the Azure SRE Agent
+    data plane. The agent resource group contains the Microsoft.App/agents
+    resource, its managed identities, and its own Application Insights and
+    Log Analytics. The workload resource group contains the Azure Container
+    Registry, the PulseMart Container App, its Log Analytics workspace, its
+    Application Insights instance, and the checkout failure alert. The
+    Container Registry supplies images to the Container App, which sends
+    telemetry to its Log Analytics workspace and Application Insights
+    instance. Application Insights feeds the alert, the alert reaches the
+    agent through the Azure Monitor incident platform, and the agent reads
+    Application Insights, Log Analytics, and the Container App, and connects
+    to the GitHub repository for source context, to investigate and
+    recommend a remediation in writing; the presenter carries out the actual
+    change themselves.
+  </desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7"
+            orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--diagram-line, #484644)"></path>
+    </marker>
+  </defs>
+
+  <style>
+    .architecture-diagram { font-family: var(--font-sans, "Segoe UI", system-ui, sans-serif); }
+    .architecture-diagram text { fill: var(--diagram-text, #201f1e); }
+    .architecture-diagram .lane-label { fill: var(--diagram-muted, #484644); font-size: 15px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+    .architecture-diagram .node-title { font-size: 15px; font-weight: 700; }
+    .architecture-diagram .node-sub { font-size: 12.5px; fill: var(--diagram-muted, #484644); }
+    .architecture-diagram .box { fill: var(--diagram-surface, #f3f2f1); stroke: var(--diagram-border, #8a8886); stroke-width: 1.5; rx: 10; }
+    .architecture-diagram .box--group { fill: none; stroke: var(--diagram-border, #8a8886); stroke-width: 1.5; stroke-dasharray: 6 5; rx: 14; }
+    .architecture-diagram .box--accent { stroke: var(--diagram-accent, #0078d4); stroke-width: 2; }
+    .architecture-diagram .edge { fill: none; stroke: var(--diagram-line, #484644); stroke-width: 1.6; marker-end: url(#arrow); }
+    .architecture-diagram .edge--accent { stroke: var(--diagram-accent, #0078d4); stroke-width: 2; marker-end: url(#arrow); }
+  </style>
+
+  <!-- Presenter and labctl -->
+  <rect class="box box--accent" x="390" y="12" width="220" height="52"></rect>
+  <text class="node-title" x="500" y="34" text-anchor="middle">Presenter</text>
+  <text class="node-sub" x="500" y="52" text-anchor="middle">runs labctl, performs the mitigation</text>
+
+  <path class="edge" d="M500,64 L500,96"></path>
+
+  <rect class="box box--accent" x="360" y="98" width="280" height="52"></rect>
+  <text class="node-title" x="500" y="120" text-anchor="middle">labctl (Python CLI)</text>
+  <text class="node-sub" x="500" y="138" text-anchor="middle">preflight - deploy - provision - verify - demo - destroy</text>
+
+  <!-- Fan-out to three control paths -->
+  <path class="edge" d="M420,150 C 350,175 230,185 175,206"></path>
+  <path class="edge" d="M470,150 L 400,206"></path>
+  <path class="edge" d="M600,150 L 690,206"></path>
+  <path class="edge" d="M630,150 C 720,175 800,185 845,206"></path>
+
+  <rect class="box" x="90" y="208" width="170" height="46"></rect>
+  <text class="node-title" x="175" y="228" text-anchor="middle">Terraform</text>
+  <text class="node-sub" x="175" y="244" text-anchor="middle">infra as code</text>
+
+  <rect class="box" x="315" y="208" width="170" height="46"></rect>
+  <text class="node-title" x="400" y="228" text-anchor="middle">ACR cloud build</text>
+  <text class="node-sub" x="400" y="244" text-anchor="middle">az acr build</text>
+
+  <rect class="box" x="605" y="208" width="170" height="46"></rect>
+  <text class="node-title" x="690" y="228" text-anchor="middle">Agent data plane</text>
+  <text class="node-sub" x="690" y="244" text-anchor="middle">knowledge - skills - hooks</text>
+
+  <rect class="box" x="760" y="208" width="170" height="46"></rect>
+  <text class="node-title" x="845" y="228" text-anchor="middle">Traffic control</text>
+  <text class="node-sub" x="845" y="244" text-anchor="middle">revisions - synthetic load</text>
+
+  <!-- Two resource groups -->
+  <rect class="box--group" x="40" y="290" width="430" height="330"></rect>
+  <text class="lane-label" x="60" y="316">Agent resource group - rg-sre-agent-demo</text>
+
+  <rect class="box--group" x="530" y="290" width="430" height="330"></rect>
+  <text class="lane-label" x="550" y="316">Workload resource group - rg-sre-agent-workload-demo</text>
+
+  <path class="edge" d="M175,254 L175,290"></path>
+  <path class="edge" d="M690,254 L 300,290"></path>
+  <path class="edge" d="M400,254 L 700,290"></path>
+  <path class="edge" d="M845,254 L 845,290"></path>
+
+  <!-- Agent RG contents -->
+  <rect class="box box--accent" x="70" y="340" width="370" height="50"></rect>
+  <text class="node-title" x="255" y="362" text-anchor="middle">Microsoft.App/agents - sre-agent-demo</text>
+  <text class="node-sub" x="255" y="380" text-anchor="middle">access High - mode Review - model Anthropic/Automatic</text>
+
+  <rect class="box" x="70" y="410" width="175" height="46"></rect>
+  <text class="node-title" x="157" y="430" text-anchor="middle">Managed identities</text>
+  <text class="node-sub" x="157" y="446" text-anchor="middle">least-privilege RBAC</text>
+
+  <rect class="box" x="265" y="410" width="175" height="46"></rect>
+  <text class="node-title" x="352" y="430" text-anchor="middle">Agent telemetry</text>
+  <text class="node-sub" x="352" y="446" text-anchor="middle">own App Insights + Log Analytics</text>
+
+  <rect class="box" x="70" y="474" width="370" height="44"></rect>
+  <text class="node-title" x="255" y="494" text-anchor="middle">Connectors</text>
+  <text class="node-sub" x="255" y="509" text-anchor="middle">app-insights - log-analytics - azure-monitor</text>
+
+  <rect class="box" x="70" y="538" width="370" height="58"></rect>
+  <text class="node-title" x="255" y="558" text-anchor="middle">GitHub source connection</text>
+  <text class="node-sub" x="255" y="575" text-anchor="middle">tkubica12/azure-sre-agent</text>
+  <text class="node-sub" x="255" y="589" text-anchor="middle">runbooks, code, response plan</text>
+
+  <!-- Workload RG contents -->
+  <rect class="box" x="560" y="340" width="160" height="46"></rect>
+  <text class="node-title" x="640" y="360" text-anchor="middle">Container Registry</text>
+  <text class="node-sub" x="640" y="376" text-anchor="middle">crpulsemartdemo...</text>
+
+  <rect class="box box--accent" x="750" y="340" width="190" height="50"></rect>
+  <text class="node-title" x="845" y="360" text-anchor="middle">Container App</text>
+  <text class="node-sub" x="845" y="378" text-anchor="middle">ca-pulsemart-demo - multiple revisions</text>
+
+  <path class="edge" d="M720,363 L750,363"></path>
+
+  <rect class="box" x="560" y="410" width="160" height="46"></rect>
+  <text class="node-title" x="640" y="430" text-anchor="middle">Log Analytics</text>
+  <text class="node-sub" x="640" y="446" text-anchor="middle">law-pulsemart-demo</text>
+
+  <rect class="box" x="760" y="410" width="170" height="46"></rect>
+  <text class="node-title" x="845" y="430" text-anchor="middle">Application Insights</text>
+  <text class="node-sub" x="845" y="446" text-anchor="middle">appi-pulsemart-demo</text>
+
+  <path class="edge" d="M845,390 L845,410"></path>
+  <path class="edge" d="M810,433 C 730,433 715,433 720,433"></path>
+
+  <rect class="box box--accent" x="700" y="478" width="190" height="46"></rect>
+  <text class="node-title" x="795" y="498" text-anchor="middle">Azure Monitor alert</text>
+  <text class="node-sub" x="795" y="513" text-anchor="middle">alert-pulsemart-checkout-5xx</text>
+
+  <path class="edge" d="M870,456 L830,478"></path>
+
+  <!-- Cross-RG edges: alert to agent, agent reads telemetry + recommends a write -->
+  <path class="edge--accent" d="M780,478 C 620,470 500,460 400,400"></path>
+  <text class="node-sub" x="560" y="465" text-anchor="middle">alert fires -&gt; incident</text>
+
+  <path class="edge--accent" d="M300,390 C 420,430 560,440 700,436"></path>
+  <text class="node-sub" x="500" y="422" text-anchor="middle">investigate (read) - recommend, in writing</text>
+
+  <path class="edge" d="M240,568 C 340,568 420,520 300,390"></path>
+</svg>
+      </div>
+      <table>
+        <thead><tr><th>Scope</th><th>Resource</th><th>Purpose</th></tr></thead>
+        <tbody>
+          <tr><td>Workload RG</td><td>Azure Container Registry (Basic)</td><td>Cloud-build and store the immutable demo image</td></tr>
+          <tr><td>Workload RG</td><td>Log Analytics - law-pulsemart-demo</td><td>Container Apps platform and console logs</td></tr>
+          <tr><td>Workload RG</td><td>Application Insights - appi-pulsemart-demo</td><td>Requests, traces, dependencies, exceptions</td></tr>
+          <tr><td>Workload RG</td><td>Container App - ca-pulsemart-demo</td><td>PulseMart service, multiple revisions, revision-based rollback</td></tr>
+          <tr><td>Workload RG</td><td>Metric alert - alert-pulsemart-checkout-5xx</td><td>Real checkout-failure incident trigger</td></tr>
+          <tr><td>Agent RG</td><td>Microsoft.App/agents - sre-agent-demo</td><td>Azure SRE Agent</td></tr>
+          <tr><td>Agent RG</td><td>Managed identities</td><td>Agent knowledge and action identity</td></tr>
+          <tr><td>Agent RG</td><td>Log Analytics + Application Insights</td><td>Agent's own platform and audit telemetry</td></tr>
+          <tr><td>Agent child</td><td>Connectors: app-insights, log-analytics, azure-monitor</td><td>Direct workload context and alert ingestion</td></tr>
+        </tbody>
+      </table>
+      <p>Two resource groups keep ownership, permission scope, cost
+        inspection, and cleanup unambiguous while one local Terraform state
+        still owns both (SPEC.md section 6).</p>
+    </section>
+
+    <!-- ================= REFERENCE: SECURITY ================= -->
+    <section id="security-safety" class="doc-section">
+      <h2>Security and safety<a class="anchor-link" href="#security-safety">#</a></h2>
+      <p>Full rationale: <a href="../../SPEC.md">SPEC.md</a> section 9. This
+        section states the checked-in design; the <a href="#beat-act">Act</a>
+        beat has the honest account of what live testing found in practice -
+        read both.</p>
+      <h3>Least-privilege RBAC (narrow, default) - proven sufficient</h3>
+      <table>
+        <thead><tr><th>Principal</th><th>Scope</th><th>Role</th></tr></thead>
+        <tbody>
+          <tr><td>Agent identities</td><td>Workload resource group</td><td>Reader, Log Analytics Reader</td></tr>
+          <tr><td>Agent identities</td><td><code>ca-pulsemart-demo</code> only</td><td>Container Apps Contributor</td></tr>
+          <tr><td>Agent identities</td><td>Subscription</td><td>Monitoring Contributor - monitoring-plane write access, required because Azure Monitor alert instances (<code>Microsoft.AlertsManagement/alerts</code>) are subscription-scoped resources with no containing resource group, so no resource-group-scoped role can reach alert-lifecycle operations at all. This is not subscription-wide Contributor and grants nothing outside <code>Microsoft.Insights</code>/<code>Microsoft.AlertsManagement</code>.</td></tr>
+          <tr><td>Agent identities</td><td>Agent resource group</td><td>Monitoring Reader</td></tr>
+        </tbody>
+      </table>
+      <p>Live-verified present on every rehearsal by
+        <code>labctl verify</code>'s <code>agent-rbac-workload</code>,
+        <code>agent-rbac-alert-lifecycle</code>, and
+        <code>agent-rbac-admin</code> checks (confirmed 2026-07-29 against
+        <code>sre-agent-demo</code>: all three PASS, and
+        <code>agent-rbac-admin</code> specifically confirms the UAMI does
+        <strong>not</strong> hold "SRE Agent Administrator" - see below).
+        <strong>This exact role set is now confirmed sufficient for the agent
+        to perform the real remediation itself</strong>, not merely deployed
+        and untested: two independent live rollbacks both succeeded with zero
+        <code>AuthorizationFailed</code> errors, and a live boundary probe
+        confirmed a write outside <code>rollback-advisor</code>'s
+        Container-App-only remit is structurally impossible under this role -
+        see the <a href="#beat-act">Act</a> beat for the full evidence.</p>
+      <p>A <code>workload_access_level = "broad"</code> escape hatch
+        (Contributor across the whole workload resource group) remains
+        available and configurable, matching the officially tested
+        High-access path - not needed by, or exercised in, this
+        demonstration.</p>
+      <h3>Run mode, hooks, and what actually governs Act</h3>
+      <ul>
+        <li><code>accessLevel: High</code>. The agent-wide
+          <code>actionConfiguration.mode</code> stays at its documented
+          default of <code>Review</code>, which by design and per Microsoft's
+          own documentation is meant to prompt for approval before
+          <strong>Azure infrastructure write operations</strong> specifically
+          - but the <code>checkout-5xx</code> incident response plan that
+          actually governs this scenario's write is configured
+          <code>agentMode: Autonomous</code>
+          (<code>agent/automations/incident-filters/checkout-5xx.yaml</code>),
+          because live testing proved the response-plan-level
+          <code>Review</code> setting never held anyway - see the
+          <a href="#beat-act">Act</a> beat for the full evidence trail.
+          Configuring <code>Review</code> here while a write-capable subagent
+          executes unattended would describe intent, not observed behavior.</li>
+        <li>Hook <code>require-approval-for-changes</code>: intended to pause
+          before any disruptive operation - kept as documented intent, not
+          relied on.</li>
+        <li>Hook <code>deny-destructive-deletes</code>: intended to refuse
+          deletion outright - kept as documented intent, not relied on.</li>
+        <li>The agent's UAMI is deliberately <strong>not</strong> granted "SRE
+          Agent Administrator" - the role that, per Microsoft's own
+          documentation, is required to approve actions. Granting it to the
+          identity whose own actions are supposed to be gated is a plausible
+          self-approval vector, closed off regardless of whether it turns out
+          to matter (see the Act beat: removing it did not, by itself,
+          restore a working gate).</li>
+        <li><code>labctl demo reset &lt;scenario&gt;</code> remains the
+          operator's reliable safety net for returning to a known baseline -
+          it is <strong>not</strong> this scenario's Act-beat mitigation step;
+          the agent performs that itself.</li>
+      </ul>
+      <p><strong>What live testing actually found, and what this
+        demonstration relies on instead:</strong> across three independent
+        test cycles against this real preview build, neither the Review-mode
+        approval prompt nor either pre-tool hook reliably blocked a mutating
+        write - see the <a href="#beat-act">Act</a> beat for the full,
+        specific evidence. The controls this repository actually, provenly
+        relies on are <strong>tool scoping and narrow RBAC</strong>:
+        <code>incident-investigator</code> has no Azure-write tool at all;
+        <code>rollback-advisor</code> is the only subagent that does, and its
+        identity's only write-capable role is scoped to one Container App
+        resource whose action set cannot reach any other resource type. The
+        hooks above remain configured as documented intent, not as a settled
+        operative control, and will start working automatically if Microsoft
+        fixes the underlying platform defect.</p>
+    </section>
+
+    <!-- ================= REFERENCE: COST ================= -->
+    <section id="cost" class="doc-section">
+      <h2>Cost<a class="anchor-link" href="#cost">#</a></h2>
+      <p>Full rationale: <a href="../../SPEC.md">SPEC.md</a> section 14;
+        official pricing:
+        <a href="https://learn.microsoft.com/azure/sre-agent/pricing-billing">learn.microsoft.com/azure/sre-agent/pricing-billing</a>.</p>
+      <div class="callout" role="note">
+        <p>Azure SRE Agent bills a fixed <strong>4 Azure Agent Units per
+          agent-hour, always-on</strong>, from the moment it is created
+          until <code>labctl destroy</code> deletes it - independent of
+          whether it is investigating anything. That alone totals roughly
+          2,880 AAU across a <strong>30-day month</strong> (4 x 24 x 30;
+          a 31-day month is closer to 2,976) with zero active-flow use.</p>
+      </div>
+      <ul>
+        <li>This demo caps <code>monthly_aau_allocation</code> at 3,000 (the
+          official template's own default is a permissive 10,000 ceiling,
+          not a required minimum), leaving headroom for the fixed always-on
+          cost plus several incident-investigation/remediation passes (each
+          roughly 10-90 AAU per Microsoft's own worked examples).</li>
+        <li>Basic ACR and a Consumption (scale-to-zero-capable) Container
+          Apps environment keep the workload side inexpensive.</li>
+        <li><code>labctl status</code> shows the running agent and its cost
+          posture on demand - use it, do not assume.</li>
+        <li><code>labctl destroy</code> is the normal end of every
+          rehearsal and of the live session; see <a href="#cleanup">Cleanup</a>.</li>
+      </ul>
+    </section>
+
+    <!-- ================= REFERENCE: TROUBLESHOOTING ================= -->
+    <section id="troubleshooting" class="doc-section">
+      <h2>Troubleshooting<a class="anchor-link" href="#troubleshooting">#</a></h2>
+      <table>
+        <thead><tr><th>Symptom</th><th>Likely cause</th><th>What to do live</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>An agent check in <code>labctl verify</code> fails right
+              after an unrelated <code>labctl deploy --yes</code></td>
+            <td>An earlier design PATCHed
+              <code>incidentManagementConfiguration</code> only from
+              <code>labctl provision</code>, once - a second, unrelated
+              Terraform apply's full-body PUT of the agent resource then
+              reset it to null (live-confirmed; see
+              <a href="../adr/0001-incident-platform-reconciliation.md">ADR
+              0001</a>). This design has since changed.</td>
+            <td><code>labctl deploy</code> now reconciles the incident
+              platform itself, idempotently, immediately after every
+              <code>terraform apply</code> succeeds - it self-heals on the
+              very next deploy. If you still see this on a current build,
+              re-run <code>preflight</code> and <code>verify</code>; if it
+              persists, that is a regression worth filing, not an expected
+              step to work around by hand.</td>
+          </tr>
+          <tr>
+            <td>Agent connector shows a non-terminal state right after
+              deploy</td>
+            <td>Connectors are asynchronous and documented to take 10-30
+              minutes</td>
+            <td>Keep talking through the architecture slides; re-check with
+              <code>labctl status</code> rather than assuming failure</td>
+          </tr>
+          <tr>
+            <td>Checkout endpoint is slow on first load</td>
+            <td>Container Apps scale-to-zero cold start</td>
+            <td>Reload once and narrate the brief warm-up as expected, not a
+              fault</td>
+          </tr>
+          <tr>
+            <td>Alert has not fired yet after triggering the fault</td>
+            <td>Real evaluation latency, not a fixed delay - the rule
+              evaluates every minute over a trailing 5-minute window; all
+              three real runs measured 260s, 260s, and 310s (5m10s) to fire,
+              and a separate earlier cycle recorded in PLAN.md Milestone 5
+              took over 8 minutes</td>
+            <td>Wait, narrating the real mechanics (see the
+              <a href="#beat-disrupt">Disrupt</a> beat's measured range)
+              rather than a fixed countdown; respect the
+              <a href="#timing">hard timebox</a> if it runs long</td>
+          </tr>
+          <tr>
+            <td>The incident thread never shows fresh investigation
+              narration on a repeat rehearsal</td>
+            <td>Incidents merge into the same thread for any alert firing
+              within the response plan's 3-hour <code>mergeWindowHours</code>
+              window, and a merged/reactivated thread does not re-run
+              automated investigation once it has already completed one
+              (live-verified)</td>
+            <td>Expected within 3 hours of a prior run - the
+              fault/recovery mechanics (<code>demo trigger</code>/<code>reset</code>)
+              are unaffected either way; do not chase this live as if it were
+              a bug</td>
+          </tr>
+          <tr>
+            <td>The agent has not executed the rollback within a few minutes
+              of a clear investigation conclusion</td>
+            <td>Agent execution latency is not guaranteed deterministic even
+              though all three real runs completed within roughly a minute
+              and a half of the investigation report (see the
+              <a href="#beat-act">Act</a> beat's measured range)</td>
+            <td>Do not wait indefinitely - run
+              <code>demo reset bad-deployment</code> yourself as the operator
+              safety net and narrate that explicitly as a fallback, not the
+              intended path</td>
+          </tr>
+          <tr>
+            <td>Recovery telemetry looks unchanged right after the rollback
+              (agent-executed, or presenter-executed via the reset fallback)</td>
+            <td>Application Insights/Log Analytics ingestion lag (typically
+              under two minutes)</td>
+            <td>Re-run <code>demo verify bad-deployment</code> after
+              a short wait before concluding remediation failed</td>
+          </tr>
+          <tr>
+            <td>You want independent proof of who changed production
+              traffic</td>
+            <td>The agent's own narrative text is not sufficient evidence by
+              itself (see the <a href="#beat-act">Act</a> beat)</td>
+            <td>Check the Azure Activity Log's <code>caller</code> field for
+              <code>Microsoft.App/containerApps</code> write operations on
+              <code>rg-sre-agent-workload-demo</code> directly - it should
+              name the agent's UAMI principal ID for an agent-executed
+              rollback, or your own account if you used the
+              <code>demo reset</code> fallback - rather than trusting a
+              self-reported summary</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>If a beat genuinely cannot recover live, say so plainly, fall back
+        to <code>demo reset bad-deployment</code> (or
+        <code>labctl destroy</code> if the whole session must end early),
+        and continue from the architecture/security reference material
+        instead of the live path.</p>
+    </section>
+
+    <!-- ================= REFERENCE: CLEANUP ================= -->
+    <section id="cleanup" class="doc-section">
+      <h2>Cleanup<a class="anchor-link" href="#cleanup">#</a></h2>
+      <p>Run this at the end of every rehearsal and at the end of the live
+        session, once you no longer need the environment:</p>
+      <pre><code>& 'labctl\.venv\Scripts\labctl.exe' destroy --plan-only
+& 'labctl\.venv\Scripts\labctl.exe' destroy --yes</code></pre>
+      <p><strong>Expected:</strong> ownership tags on every resource group
+        are checked first; a warning that the agent has been incurring
+        always-on Azure Agent Unit cost until this point; both resource
+        groups and every child resource are destroyed; a final check
+        confirms nothing owned remains and exits 0. If any unrecognized
+        resource is found inside an owned resource group, destroy stops and
+        prints it for review rather than deleting it blindly - only pass
+        <code>--allow-unrecognized-resources</code> after you have read
+        that list yourself.</p>
+    </section>
+
+    <!-- ================= REFERENCE: ADOPTION ================= -->
+    <section id="adoption" class="doc-section">
+      <h2>Adoption guidance<a class="anchor-link" href="#adoption">#</a></h2>
+      <ol>
+        <li>Scope the agent to one workload resource group first, not a
+          whole subscription.</li>
+        <li>Connect Application Insights, Log Analytics, and Azure Monitor
+          before anything else.</li>
+        <li>Start in Review mode with explicit approval and destructive-deny
+          hooks, but verify live that the approval gate actually holds in
+          your subscription before trusting it for anything real - if it does
+          not, rely on tool scoping and narrow RBAC the way this demonstration
+          does, and prove the RBAC boundary live rather than assuming it.</li>
+        <li>Write down one real runbook before your first live incident -
+          the agent is grounded by what you give it.</li>
+        <li>Track cost from day one with the equivalent of
+          <code>labctl status</code>; always-on billing starts at creation.</li>
+      </ol>
+    </section>
+
+    <!-- ================= REFERENCE: SOURCES ================= -->
+    <section id="source-references" class="doc-section">
+      <h2>Source and references<a class="anchor-link" href="#source-references">#</a></h2>
+      <h3>This repository</h3>
+      <ul>
+        <li><a href="../../AGENTS.md">AGENTS.md</a> - engineering rules for
+          this repository, including the visual-system rules this guide and
+          the slides follow.</li>
+        <li><a href="../../SPEC.md">SPEC.md</a> - full specification,
+          narrative, architecture, and acceptance criteria.</li>
+        <li><a href="../../PLAN.md">PLAN.md</a> - milestones and current,
+          live-verified execution status.</li>
+        <li><a href="../adr/0001-incident-platform-reconciliation.md">ADR
+          0001</a> - why <code>labctl deploy</code>, not Terraform, owns the
+          incident platform reconciliation referenced in
+          <a href="#troubleshooting">Troubleshooting</a>.</li>
+        <li><a href="../../README.md">README.md</a> - quick start and the
+          full <code>labctl</code> command surface.</li>
+        <li><a href="../../agent/README.md">agent/README.md</a> - the agent
+          data-plane content applied by <code>labctl provision</code>.</li>
+        <li><a href="../../scenarios/bad-deployment/runbook/README.md">scenarios/bad-deployment/runbook/README.md</a>
+          - the operator-facing runbook this guide's Disrupt/Investigate/Act
+          beats are synchronized with.</li>
+        <li><a href="../../scenarios/bad-deployment/evidence/act-beat-transcript-2026-07-29.md">scenarios/bad-deployment/evidence/act-beat-transcript-2026-07-29.md</a>
+          - the real, verbatim, two-run transcript and Activity Log evidence
+          the Investigate and Act beats quote from.</li>
+      </ul>
+      <h3>Official Azure SRE Agent documentation</h3>
+      <ul>
+        <li><a href="https://learn.microsoft.com/azure/sre-agent/overview">Overview</a></li>
+        <li><a href="https://learn.microsoft.com/azure/sre-agent/create-and-set-up">Create and set up</a></li>
+        <li><a href="https://learn.microsoft.com/azure/sre-agent/deploy-iac">Deploy with infrastructure as code</a></li>
+        <li><a href="https://learn.microsoft.com/azure/sre-agent/automate-incidents">Automate incident response</a></li>
+        <li><a href="https://learn.microsoft.com/azure/sre-agent/security-overview">Security overview</a></li>
+        <li><a href="https://learn.microsoft.com/azure/sre-agent/supported-regions">Supported regions</a></li>
+        <li><a href="https://learn.microsoft.com/azure/sre-agent/pricing-billing">Pricing and billing</a></li>
+      </ul>
+      <p class="lead">Product facts above are dated to this repository's
+        research date of 2026-07-28/29 (see SPEC.md). Re-verify against the
+        current documentation before a future rehearsal if enough time has
+        passed for the product to have changed.</p>
+      <a class="back-to-top" href="#overview">Back to top</a>
+    </section>
+
+  </main>
+</div>
+
+<script src="../assets/js/theme.js"></script>
+<script src="guide.js"></script>
+</body>
+</html>

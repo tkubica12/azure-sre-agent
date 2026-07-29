@@ -1,0 +1,164 @@
+/*
+ * Presenter guide layout: a persistent left table-of-contents plus a wide
+ * reading column. Collapses to a single column with a top nav on narrow
+ * viewports.
+ */
+
+body.guide-body {
+  background: var(--bg);
+}
+
+.guide-shell {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+.guide-toc {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: 100vh;
+  overflow-y: auto;
+  padding: var(--space-5) var(--space-4);
+  border-right: 1px solid var(--border);
+  background: var(--bg-inset);
+}
+
+.guide-toc h2 {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin: var(--space-4) 0 var(--space-2);
+}
+
+.guide-toc h2:first-child {
+  margin-top: 0;
+}
+
+.guide-toc ul {
+  list-style: none;
+  margin: 0 0 var(--space-2);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.guide-toc a {
+  display: block;
+  padding: 0.3em 0.5em;
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  color: var(--text);
+  font-size: 0.92rem;
+}
+
+.guide-toc a:hover {
+  background: var(--bg-elevated);
+}
+
+.guide-toc a.is-current {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 600;
+}
+
+.guide-main {
+  padding: var(--space-6) clamp(1.25rem, 4vw, 4rem) var(--space-8);
+  max-width: 78ch;
+}
+
+.guide-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) clamp(1.25rem, 4vw, 4rem);
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  grid-column: 1 / -1;
+}
+
+.guide-topbar .title {
+  font-weight: 700;
+}
+
+.guide-topbar .actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+section.beat,
+section.doc-section {
+  padding-top: var(--space-6);
+  margin-top: var(--space-2);
+  border-top: 1px solid var(--border);
+  scroll-margin-top: 4.5rem;
+}
+
+section.beat:first-of-type,
+section.doc-section:first-of-type {
+  border-top: none;
+}
+
+.beat-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.beat-grid {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.beat-grid h3 {
+  margin-bottom: var(--space-2);
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.callout {
+  border-left: 4px solid var(--accent);
+  background: var(--bg-elevated);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  padding: var(--space-3) var(--space-4);
+}
+
+.callout--fallback {
+  border-left-color: var(--control-border);
+}
+
+.back-to-top {
+  display: inline-block;
+  margin-top: var(--space-6);
+}
+
+.anchor-link {
+  font-weight: 400;
+  font-size: 0.75em;
+  margin-left: var(--space-2);
+  text-decoration: none;
+  color: var(--text-muted);
+}
+
+@media (max-width: 860px) {
+  .guide-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .guide-toc {
+    position: static;
+    height: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+}

@@ -1,0 +1,890 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Azure SRE Agent - live demonstration slides</title>
+<meta name="description" content="Presenter slide deck for the Azure SRE Agent PulseMart incident demonstration." />
+<script src="../assets/js/theme-bootstrap.js"></script>
+<link rel="stylesheet" href="../assets/css/tokens.css" />
+<link rel="stylesheet" href="../assets/css/base.css" />
+<link rel="stylesheet" href="slides.css" />
+</head>
+<body class="slides-body">
+<a class="skip-link" href="#deck">Skip to slide content</a>
+<div id="slide-announcer" class="visually-hidden" role="status" aria-live="polite"></div>
+<div id="fragment-announcer" class="visually-hidden" role="status" aria-live="polite"></div>
+
+<main id="deck">
+  <div class="stage" role="region" aria-roledescription="slide deck" aria-label="Azure SRE Agent live demonstration">
+
+    <!-- ======================= SEGMENT 1: WHY AZURE SRE AGENT (3 min) ======================= -->
+
+    <section class="slide" id="s-title" tabindex="-1">
+      <div class="slide-kicker">
+        <span class="chip chip--accent">Why Azure SRE Agent - 3 min</span>
+        <span class="chip">Sweden Central</span>
+      </div>
+      <h1 data-slide-title>Azure SRE Agent, live</h1>
+      <div class="slide-body">
+        <p class="lead">A real incident, a real agent, and a human who stays in
+          control - end to end, against a real Azure subscription.</p>
+        <p class="fragment">Workload: <strong>PulseMart</strong>, a checkout
+          service running on Azure Container Apps.</p>
+        <p class="fragment">Agent: <strong>sre-agent-demo</strong>, resource
+          group <code>rg-sre-agent-demo</code>, region <code>swedencentral</code>.</p>
+      </div>
+      <div class="notes" hidden>
+        <p>Open on the title slide while the audience settles. State plainly
+          that everything shown today is a live, working deployment - not a
+          recording and not a mockup. Name the two resource groups you will
+          keep returning to.</p>
+      </div>
+    </section>
+
+    <section class="slide" id="s-problem" tabindex="-1">
+      <div class="slide-kicker">
+        <span class="chip chip--accent">Why Azure SRE Agent - 3 min</span>
+      </div>
+      <h2 data-slide-title>The problem, and what changes</h2>
+      <div class="slide-body two-col">
+        <div class="card fragment">
+          <h3>Today, without an agent</h3>
+          <ul>
+            <li>Alerts fire faster than any one person can correlate logs,
+              metrics, traces, and recent changes.</li>
+            <li>The person who understands the code is rarely the person
+              holding the pager.</li>
+            <li>Runbooks and tribal knowledge live in people's heads, not in
+              the tools that page them.</li>
+          </ul>
+        </div>
+        <div class="card fragment">
+          <h3>What the agent adds</h3>
+          <ul>
+            <li><strong>Grounded investigation</strong>: correlates Azure
+              Monitor, Application Insights, Log Analytics, source code, and
+              your own runbooks the moment an alert fires.</li>
+            <li><strong>A human who stays in control</strong>: proposes a real
+              remediation and names exactly who is allowed to carry it out -
+              see <a href="../guide/index.html#beat-act">the Act beat</a> for
+              precisely what that means today.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="notes" hidden>
+        <p>Keep the left card to real operational pain, not a product pitch.
+          Ask the room: how long does triage usually take before anyone even
+          agrees on a root cause? The right card is the thesis of the whole
+          demo - everything after this slide is proof, not more claims.</p>
+      </div>
+    </section>
+
+    <section class="slide" id="s-agenda" tabindex="-1">
+      <div class="slide-kicker">
+        <span class="chip chip--accent">Why Azure SRE Agent - 3 min</span>
+      </div>
+      <h2 data-slide-title>Today's rhythm</h2>
+      <div class="slide-body">
+        <ol>
+          <li class="fragment"><strong>Orient</strong> - workload, telemetry, agent scope and safety model</li>
+          <li class="fragment"><strong>Observe</strong> - the healthy application and its baseline telemetry</li>
+          <li class="fragment"><strong>Disrupt</strong> - a controlled, reversible production-like fault</li>
+          <li class="fragment"><strong>Investigate</strong> - the agent correlates resources, logs, metrics, source, and knowledge</li>
+          <li class="fragment"><strong>Act</strong> - the agent recommends a fix; a human runs the one command; the Activity Log proves who did it</li>
+          <li class="fragment"><strong>Verify</strong> - proof of recovery, from the user and from telemetry</li>
+          <li class="fragment"><strong>Learn</strong> - the incident record, audit evidence, and automation opportunities</li>
+        </ol>
+      </div>
+      <div class="notes" hidden>
+        <p>This is the exact scene order in SPEC.md section 5. Point out that
+          every later slide is labeled with which segment it belongs to, so
+          the room can always tell where we are in the story. The Act step's
+          wording is deliberate: say it exactly this way every time, it is
+          the corrected narrative for this build.</p>
+      </div>
+    </section>
+
+    <!-- ======================= SEGMENT 2: ARCHITECTURE AND CONTROLS (4 min) ======================= -->
+
+    <section class="slide" id="s-architecture" tabindex="-1">
+      <div class="slide-kicker">
+        <span class="chip chip--accent">Architecture and controls - 4 min</span>
+        <a class="chip" href="../guide/index.html#architecture">Guide: architecture</a>
+      </div>
+      <h2 data-slide-title>Two resource groups, one story</h2>
+      <div class="slide-body">
+        <div class="diagram-wrap" aria-hidden="false">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 950 420" role="img"
+     aria-labelledby="arch-title arch-desc" class="architecture-diagram architecture-diagram--simple">
+  <title id="arch-title">Azure SRE Agent demonstration architecture (simplified)</title>
+  <desc id="arch-desc">
+    The presenter drives labctl and the PulseMart workload. PulseMart emits
+    telemetry to Application Insights and Log Analytics, which feed an Azure
+    Monitor alert. The alert reaches the Azure SRE Agent through the incident
+    platform. The agent reads telemetry, the workload, and connected GitHub
+    source to investigate, and states a recommendation - it does not write to
+    the workload itself in this build. The full resource-by-resource topology
+    is in the presenter guide's architecture section, not on this slide.
+  </desc>
+  <defs>
+    <marker id="arrow-simple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7"
+            orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--diagram-line, #484644)"></path>
+    </marker>
+  </defs>
+
+  <style>
+    .architecture-diagram--simple { font-family: var(--font-sans, "Segoe UI", system-ui, sans-serif); }
+    .architecture-diagram--simple text { fill: var(--diagram-text, #201f1e); }
+    .architecture-diagram--simple .node-title { font-size: 22px; font-weight: 700; }
+    .architecture-diagram--simple .node-sub { font-size: 15px; fill: var(--diagram-muted, #484644); }
+    .architecture-diagram--simple .box { fill: var(--diagram-surface, #f3f2f1); stroke: var(--diagram-border, #8a8886); stroke-width: 1.5; rx: 12; }
+    .architecture-diagram--simple .box--accent { stroke: var(--diagram-accent, #0078d4); stroke-width: 2.5; }
+    .architecture-diagram--simple .edge { fill: none; stroke: var(--diagram-line, #484644); stroke-width: 2; marker-end: url(#arrow-simple); }
+    .architecture-diagram--simple .edge--accent { fill: none; stroke: var(--diagram-accent, #0078d4); stroke-width: 2.5; marker-end: url(#arrow-simple); }
+    .architecture-diagram--simple .edge-label { font-size: 14px; fill: var(--diagram-muted, #484644); }
+  </style>
+
+  <!-- Presenter -->
+  <rect class="box box--accent" x="20" y="185" width="150" height="60"></rect>
+  <text class="node-title" x="95" y="212" text-anchor="middle">Presenter</text>
+  <text class="node-sub" x="95" y="232" text-anchor="middle">labctl CLI</text>
+
+  <!-- PulseMart workload -->
+  <rect class="box box--accent" x="250" y="185" width="180" height="60"></rect>
+  <text class="node-title" x="340" y="212" text-anchor="middle">PulseMart</text>
+  <text class="node-sub" x="340" y="232" text-anchor="middle">Container App</text>
+
+  <!-- Telemetry + alert -->
+  <rect class="box" x="510" y="70" width="200" height="70"></rect>
+  <text class="node-title" x="610" y="98" text-anchor="middle">Telemetry</text>
+  <text class="node-sub" x="610" y="118" text-anchor="middle">App Insights + Log Analytics</text>
+  <text class="node-sub" x="610" y="134" text-anchor="middle">+ Azure Monitor alert</text>
+
+  <!-- Agent -->
+  <rect class="box box--accent" x="770" y="185" width="150" height="60"></rect>
+  <text class="node-title" x="845" y="212" text-anchor="middle">SRE Agent</text>
+  <text class="node-sub" x="845" y="232" text-anchor="middle">investigates, recommends</text>
+
+  <!-- Source -->
+  <rect class="box" x="510" y="290" width="200" height="60"></rect>
+  <text class="node-title" x="610" y="317" text-anchor="middle">GitHub source</text>
+  <text class="node-sub" x="610" y="337" text-anchor="middle">runbooks + code</text>
+
+  <path class="edge" d="M170,205 L250,205"></path>
+  <text class="edge-label" x="210" y="195" text-anchor="middle">drives, resets</text>
+
+  <path class="edge" d="M340,185 C 400,140 460,120 510,110"></path>
+  <text class="edge-label" x="420" y="140" text-anchor="middle">emits</text>
+
+  <path class="edge--accent" d="M660,140 C 730,160 760,175 780,190"></path>
+  <text class="edge-label" x="740" y="160" text-anchor="middle">alert -&gt; incident</text>
+
+  <path class="edge" d="M770,205 C 720,240 680,235 660,190"></path>
+  <text class="edge-label" x="740" y="245" text-anchor="middle">reads telemetry</text>
+
+  <path class="edge" d="M770,220 C 700,300 660,310 660,310"></path>
+  <text class="edge-label" x="720" y="290" text-anchor="middle">reads source</text>
+
+  <path class="edge" d="M430,215 C 470,240 490,245 510,300"></path>
+</svg>
+        </div>
+      </div>
+      <div class="notes" hidden>
+        <p>This is deliberately simplified to five boxes for room-distance
+          readability - the full resource-by-resource topology (both resource
+          groups, every child resource) is in the guide's architecture
+          section; open it if anyone asks for the detailed picture.</p>
+      </div>
+    </section>
+
+    <section class="slide" id="s-two-rgs" tabindex="-1">
+      <div class="slide-kicker">
+        <span class="chip chip--accent">Architecture and controls - 4 min</span>
+      </div>
+      <h2 data-slide-title>Why split agent and workload?</h2>
+      <div class="slide-body two-col">
+        <div class="card">
+          <h3>rg-sre-agent-demo</h3>
+          <ul>
+            <li>Microsoft.App/agents - sre-agent-demo</li>
+            <li>Agent managed identities</li>
+            <li>Agent's own Application Insights + Log Analytics</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>rg-sre-agent-workload-demo</h3>
+          <ul>
+            <li>ca-pulsemart-demo (Container App, multiple revisions)</li>
+            <li>appi-pulsemart-demo, law-pulsemart-demo</li>
+            <li>crpulsemartdemo... (ACR), alert-pulsemart-checkout-5xx</li>
+          </ul>
+        </div>
+      </div>
+      <div class="notes" hidden>
+        <p>The split makes cost inspection, RBAC scoping, and destroy-time
+          ownership checks unambiguous - see SPEC.md section 6. One
+          Terraform state still owns both.</p>
+      </div>
+    </section>
+
+    <section class="slide" id="s-rbac" tabindex="-1">
+      <div class="slide-kicker">
+        <span class="chip chip--accent">Architecture and controls - 4 min</span>
+        <a class="chip" href="../guide/index.html#security-safety">Guide: security</a>
+      </div>
+      <h2 data-slide-title>Least-privilege identity</h2>
+      <div class="slide-body">
+        <table>
+          <thead>
+            <tr><th>Scope</th><th>Role</th></tr>
+          </thead>
+          <tbody>
+            <tr class="fragment"><td>Workload resource group</td><td>Reader + Log Analytics Reader</td></tr>
+            <tr class="fragment"><td>ca-pulsemart-demo (Container App only)</td><td>Container Apps Contributor</td></tr>
+            <tr class="fragment"><td>Subscription</td><td>Monitoring Contributor - monitoring-plane write, alert lifecycle only</td></tr>
+            <tr class="fragment"><td>Agent resource group</td><td>Monitoring Reader</td></tr>
+          </tbody>
+        </table>
+        <p class="fragment">Live-verified present, every rehearsal:
+          <code>labctl verify</code> checks <code>agent-rbac-workload</code>,
+          <code>agent-rbac-alert-lifecycle</code>, and
+          <code>agent-rbac-admin</code>.</p>
+      </div>
+      <div class="notes" hidden>
+        <p>"Monitoring Contributor" at subscription scope is not
+          subscription-wide Contributor - Azure Monitor alert instances have
+          no containing resource group, so this is the narrowest scope that
+          reaches alert lifecycle operations at all, and it grants nothing
+          outside Microsoft.Insights/Microsoft.AlertsManagement. Container
+          Apps write is scoped to the one Container App, not the resource
+          group. This is the "narrow" workload_access_level from SPEC.md
+          section 9 - and the agent's UAMI deliberately does NOT hold "SRE
+          Agent Administrator" (see the Act beat for why that mattered).</p>
+      </div>
+    </section>
+
+    <section class="slide" id="s-safety" tabindex="-1">
+      <div class="slide-kicker">
+        <span class="chip chip--accent">Architecture and controls - 4 min</span>
+      </div>
+      <h2 data-slide-title>The safety model, in one place</h2>
+      <div class="slide-body">
+        <ul>
+          <li class="fragment"><strong>accessLevel: High</strong>,
+            <strong>actionMode: Review</strong> - by design, Azure
+            infrastructure write operations are meant to prompt for approval;
+            read-only investigation never needs it.</li>
+          <li class="fragment">Hook <code>require-approval-for-changes</code>
+            - intended to pause before any disruptive operation.</li>
+          <li class="fragment">Hook <code>deny-destructive-deletes</code>
+            - intended to refuse deletions outright.</li>
+          <li class="fragment">Every fault this demo injects is reversible
+            with <code>labctl demo reset</code>.</li>
+        </ul>
+        <p class="fragment chip">What we found when we tested this live, and
+          what actually governs the Act beat: see the honest disclosure
+          coming up in Act.</p>
+      </div>
+      <div class="notes" hidden>
+        <p>Do not over-promise here - say "by design" and "intended to",
+          deliberately, every time. The Act beat is where you tell the room
+          what live testing actually showed and what the real governance
+          control turned out to be. Do not resolve that tension on this
+          slide; it is the Act beat's dramatic content.</p>
+      </div>
+    </section>
+
+    <section class="slide" id="s-cost" tabindex="-1">
+      <div class="slide-kicker">
+        <span class="chip chip--accent">Architecture and controls - 4 min</span>
+        <a class="chip" href="../guide/index.html#cost">Guide: cost</a>
+      </div>
+      <h2 data-slide-title>Be honest about cost</h2>
+      <div class="slide-body">
+        <p class="lead">The agent bills always-on Azure Agent Units from the
+          moment it is created until it is destroyed - whether or not it is
+          investigating anything.</p>
+        <ul>
+          <li class="fragment">Fixed 4 AAUs per agent-hour, always-on.</li>
+          <li class="fragment">This demo caps monthly allocation at 3,000 AAU
+            (the official default is a permissive 10,000).</li>
+          <li class="fragment"><code>labctl status</code> shows the running
+            agent and its cost posture every time.</li>
+          <li class="fragment"><code>labctl destroy</code> is the only way to
+            stop the always-on charge.</li>
+        </ul>
+      </div>
+      <div class="notes" hidden>
+        <p>Source: learn.microsoft.com/azure/sre-agent/pricing-billing. Do
+          not let anyone leave believing this is free while idle. Full
+          numbers, including the 30-day-month assumption behind any total
+          figure, are in the guide's cost section.</p>
+      </div>
+    </section>
+
+    <!-- ======================= SEGMENT 3: HEALTHY SYSTEM EXPLORATION (6 min) ======================= -->
+
+    <section class="slide" id="s-pulsemart" tabindex="-1">
+      <div class="slide-kicker">
+        <span class="chip chip--accent">Healthy system exploration - 6 min</span>
+      </div>
+      <h2 data-slide-title>Meet PulseMart</h2>
+      <div class="slide-body">
+        <p class="lead">A small FastAPI checkout service with real
+          OpenTelemetry instrumentation - requests, custom checkout spans,
+          dependency calls, exceptions, and release/revision attributes.</p>
+        <ul>
+          <li class="fragment"><code>GET /healthz</code>, <code>GET /api/status</code>,
+            <code>POST /api/checkout</code></li>
+          <li class="fragment">Runs on Azure Container Apps in Multiple
+            revision mode, fronted by a public HTTPS endpoint.</li>
+        </ul>
+      </div>
+      <div class="notes" hidden>
+        <p>Transition cue: open the PulseMart HTTPS endpoint in a browser tab
+          now, side by side with these slides, so the room sees it is a real
+          site, not a screenshot.</p>
+      </div>
+    </section>
+
+    <section class="slide" id="s-healthy-live" tabindex="-1">
+      <div class="slide-kicker">
+        <span class="chip chip--accent">Healthy system exploration - 6 min</span>
+        <span class="chip chip--solid">Live</span>
+      </div>
+      <h2 data-slide-title>Live: healthy checkout</h2>
+      <div class="slide-body">
+        <p>Switch to the browser tab. Complete a checkout. Show the
+          status page's active revision and recent successes.</p>
+        <pre class="command-block"><code>& 'labctl\.venv\Scripts\labctl.exe' status</code></pre>
+        <p class="fragment">Expect: 100% traffic on the known-good baseline
+          revision, healthy endpoint checks, agent shown as Running.</p>
+      </div>
+      <div class="notes" hidden>
+        <p>Full expected output and fallback path: guide, Observe beat. If
+          the endpoint is slow to load (cold start), mention Container Apps
+          scale-to-zero and try again - this itself is a good demonstration
+          of a benign, expected latency blip versus a real incident.</p>
+      </div>
+    </section>
+
+    <section class="slide" id="s-telemetry-live" tabindex="-1">
+      <div class="slide-kicker">
+        <span class="chip chip--accent">Healthy system exploration - 6 min</span>
+        <span class="chip chip--solid">Live</span>
+      </div>
+      <h2 data-slide-title>Live: baseline telemetry</h2>
+      <div class="slide-body">
+        <p>In the Azure portal, open Application Insights
+          <code>appi-pulsemart-demo</code> - show request success rate,
+          latency, and the nested checkout / inventory.check /
+          payment.charge dependency spans for one request.</p>
+        <p class="fragment">Then open Log Analytics
+          <code>law-pulsemart-demo</code> and show a live
+          <code>ContainerAppConsoleLogs_CL</code> query returning rows.</p>
+      </div>
+      <div class="notes" hidden>
+        <p>This baseline is what "back to normal" will mean later in
+          Verify. Keep this portal tab open or bookmarked for a fast return
+          during the recovery beat.</p>
+      </div>
+    </section>
+
+    <section class="slide" id="s-ask-agent" tabindex="-1">
+      <div class="slide-kicker">
+        <span class="chip chip--accent">Healthy system exploration - 6 min</span>
+        <span class="chip chip--solid">Live</span>
+      </div>
+      <h2 data-slide-title>Live: ask the agent, before any incident</h2>
+      <div class="slide-body">
+        <p>Open the agent portal and ask it, in plain language, to map the
+          application architecture and summarize health over the last 30
+          minutes.</p>
+        <p class="fragment">This proves read-only, grounded investigation
+          works even with nothing wrong - the agent cites Azure Monitor,
+          Application Insights, Log Analytics, and source files, not a
+          canned answer.</p>
+      </div>
+      <div class="notes" hidden>
+        <p>Portal deep link (replace the subscription-ID segment with your
+          own):
+          https://sre.azure.com/#/agent/00000000-0000-0000-0000-000000000000/rg-sre-agent-demo/sre-agent-demo
+          Keep the exact response text off these slides; read it live from
+          the portal so the room sees it happen in real time.</p>
+      </div>
+    </section>
+
+    <!-- ======================= SEGMENT 4: TRIGGER AND AUTOMATED INVESTIGATION (11 min median / 17 min worst case) ======================= -->
+
+    <section class="slide" id="s-break-it" tabindex="-1">
+      <div class="slide-kicker">
+        <span class="chip chip--accent">Trigger and investigation - 11 min (worst case 17)</span>
+      </div>
+      <h2 data-slide-title>Let's break it - on purpose</h2>
+      <div class="slide-body">
+        <p class="lead">A controlled, reversible, production-like fault:
+          a new Container Apps revision from the same immutable image, with
+          <code>DEMO_FAILURE_MODE=checkout-500</code>.</p>
+        <ul>
+          <li class="fragment">Known-good and failing revisions run side by
+            side - Multiple revision mode never removes the healthy one.</li>
+          <li class="fragment">No customer or persistent data is touched.</li>
+          <li class="fragment">Fully reversible with <code>labctl demo reset</code>.</li>
+        </ul>
+      </div>
+      <div class="notes" hidden>
+        <p>Set expectations before triggering: this is a real HTTP 500, a
+          real fired Azure Monitor alert, and a real agent investigation -
+          nothing here is simulated.</p>
+      </div>
+    </section>
+
+    <section class="slide" id="s-trigger-live" tabindex="-1">
+      <div class="slide-kicker">
+        <span class="chip chip--accent">Trigger and investigation - 11 min (worst case 17)</span>
+        <span class="chip chip--solid">Live</span>
+        <a class="chip" href="../guide/index.html#beat-disrupt">Guide: Disrupt</a>
+      </div>
+      <h2 data-slide-title>Live: trigger the incident</h2>
+      <div class="slide-body">
+        <pre class="command-block"><code>& 'labctl\.venv\Scripts\labctl.exe' demo trigger bad-deployment</code></pre>
+        <ul>
+          <li class="fragment">Creates the failing revision and shifts
+            production traffic to it.</li>
+          <li class="fragment">Generates bounded synthetic checkout traffic
+            until the real alert threshold is crossed.</li>
+        </ul>
+      </div>
+      <div class="notes" hidden>
+        <p>Exact expected console output and fallback if the command is not
+          yet available on this build: guide, Disrupt beat.</p>
+      </div>
+    </section>
+
+    <section class="slide" id="s-fault-evidence" tabindex="-1">
+      <div class="slide-kicker">
+        <span class="chip chip--accent">Trigger and investigation - 11 min (worst case 17)</span>
+        <span class="chip chip--solid">Live</span>
+      </div>
+      <h2 data-slide-title>Live: watch the failure land</h2>
+      <div class="slide-body">
+        <ul>
+          <li class="fragment">Checkout requests start returning HTTP 500.</li>
+          <li class="fragment">Application Insights shows exceptions and
+            failed dependency calls tagged with the new revision.</li>
+          <li class="fragment">The Azure Monitor alert
+            <code>alert-pulsemart-checkout-5xx</code> moves to Fired.</li>
+        </ul>
+      </div>
+      <div class="notes" hidden>
+        <p>Refresh the same Application Insights/Log Analytics views used in
+          the healthy segment so the contrast with baseline is visible.</p>
+      </div>
+    </section>
+
+    <section class="slide" id="s-incident-routing" tabindex="-1">
+      <div class="slide-kicker">
+        <span class="chip chip--accent">Trigger and investigation - 11 min (worst case 17)</span>
+      </div>
+      <h2 data-slide-title>How the alert reaches the agent</h2>
+      <div class="slide-body">
+        <ul>
+          <li class="fragment">Incident management configuration: type
+            <code>AzMonitor</code>.</li>
+          <li class="fragment">Response plan <code>checkout-5xx</code>
+            filters to this alert's title and severity.</li>
+          <li class="fragment">Subagent <code>incident-investigator</code>
+            picks up the incident automatically.</li>
+        </ul>
+      </div>
+      <div class="notes" hidden>
+        <p>No human had to open a ticket or paste a link - the incident
+          platform connection is what makes pickup automatic.</p>
+      </div>
+    </section>
+
+    <section class="slide" id="s-investigation-live" tabindex="-1">
+      <div class="slide-kicker">
+        <span class="chip chip--accent">Trigger and investigation - 11 min (worst case 17)</span>
+        <span class="chip chip--solid">Live</span>
+      </div>
+      <h2 data-slide-title>Live: the agent investigates</h2>
+      <div class="slide-body">
+        <p>Open the incident in the agent portal and watch the
+          investigation run. Read its findings aloud as they appear.</p>
+        <p class="fragment">Investigation time varies for real reasons - if a
+          CLI call fails and it visibly switches tools, say so: "watch, that
+          just failed and it's recovering via Azure Resource Graph" is a good
+          moment, not dead air.</p>
+        <div class="callout" role="note">
+          <p><strong>Real excerpt, 2026-07-29</strong> (verbatim, full text
+            in the guide and <a href="../guide/index.html#beat-investigate">the
+            evidence file</a>):</p>
+          <p class="fragment">"41 HTTP 5xx responses recorded ... aligning
+            precisely with when the fault revision started serving
+            traffic." ... "the <code>_charge_payment</code> function raises
+            <code>CheckoutFailure</code> ... the only code path that produces
+            the observed error message."</p>
+          <p class="fragment">"<strong>Confidence: High.</strong> All
+            evidence - timing, error message, env var, metrics spike, and
+            source code - converges on a single explanation."</p>
+        </div>
+      </div>
+      <div class="notes" hidden>
+        <p>Read the real, live investigation from the portal every time -
+          this excerpt is here so you know the calibre of evidence to expect
+          and can quote it accurately, not as a substitute for watching it
+          happen live. Three real runs measured, not two: alert-to-report
+          took ~3-4 minutes on two runs and 6m23s on a third, rebuilt-
+          environment run - a real, root-caused result (failed CLI calls
+          recovered via Resource Graph; the connected repo currently lacks
+          committed app source, so the agent leaned on operational knowledge
+          instead). See the guide's Investigate beat for exactly what to say
+          if this happens to you live. Full transcripts:
+          scenarios/bad-deployment/evidence/act-beat-transcript-2026-07-29.md
+          and PLAN.md's timing-drift record for the third run.</p>
+      </div>
+    </section>
+
+    <section class="slide" id="s-grounding" tabindex="-1">
+      <div class="slide-kicker">
+        <span class="chip chip--accent">Trigger and investigation - 11 min (worst case 17)</span>
+      </div>
+      <h2 data-slide-title>What grounds the investigation</h2>
+      <div class="slide-body two-col">
+        <div class="card fragment">
+          <h3>Operational context</h3>
+          <ul>
+            <li>Checkout-500 runbook (uploaded knowledge)</li>
+            <li>Application Insights + Log Analytics connectors</li>
+            <li>Revision and configuration history</li>
+          </ul>
+        </div>
+        <div class="card fragment">
+          <h3>Source context</h3>
+          <ul>
+            <li>Connected repository: tkubica12/azure-sre-agent</li>
+            <li>Skill: triage-checkout-failures</li>
+            <li>Common prompts: investigation-guidelines, safety-rules</li>
+          </ul>
+        </div>
+      </div>
+      <div class="notes" hidden>
+        <p>This is the difference from a generic chatbot: every citation the
+          agent makes traces back to one of these concrete, version
+          -controlled or Azure-native sources.</p>
+      </div>
+    </section>
+
+    <section class="slide" id="s-hypothesis" tabindex="-1">
+      <div class="slide-kicker">
+        <span class="chip chip--accent">Trigger and investigation - 11 min (worst case 17)</span>
+      </div>
+      <h2 data-slide-title>From evidence to hypothesis</h2>
+      <div class="slide-body">
+        <p class="lead">The agent (as <code>incident-investigator</code>)
+          correlates the failure with the new revision and its
+          <code>DEMO_FAILURE_MODE</code> configuration change, and its
+          written findings recommend the exact fix: shift traffic back to
+          the known-good revision.</p>
+        <p class="fragment">There is no platform hand-off to another agent -
+          workspace mode rejects that outright. Its written recommendation is
+          what drives <code>rollback-advisor</code> into action next, in the
+          same run.</p>
+      </div>
+      <div class="notes" hidden>
+        <p>Be precise: <code>incident-investigator</code> does not use a
+          configured platform hand-off to <code>rollback-advisor</code> -
+          this agent's workspace mode rejects new agent-to-agent hand-offs
+          outright (<code>handoffs: []</code> on both subagents). What
+          happens instead: its written findings recommend engaging
+          <code>rollback-advisor</code>, and that recommendation drives a
+          Task-based invocation within the same investigation - not a
+          platform hand-off, and not a second human request either. Bridge
+          into the next segment: "Watch what it does next - and I want to be
+          straight with you about what we found when we tested that live."</p>
+      </div>
+    </section>
+
+    <!-- ======================= SEGMENT 5: REMEDIATE AND VERIFY (7 min) ======================= -->
+
+    <section class="slide" id="s-review-mode" tabindex="-1">
+      <div class="slide-kicker">
+        <span class="chip chip--accent">Remediate and verify - 7 min</span>
+      </div>
+      <h2 data-slide-title>An honest correction, live-tested</h2>
+      <div class="slide-body">
+        <p class="lead">We tested the Review-mode approval gate against this
+          real preview build - three separate times. It did not hold.</p>
+        <ul>
+          <li class="fragment">Each time, the mutating traffic-shift command
+            ran for real, seconds after the agent decided to run it - with
+            the approvals API empty and every approval/hook field null.</li>
+          <li class="fragment">We tested and disproved the obvious theory
+            (the agent approving its own action): removing its "SRE Agent
+            Administrator" role changed nothing.</li>
+          <li class="fragment">We found why: this preview API silently drops
+            a hook's enforcement fields on save, so no hook shape we tried
+            reliably blocks a write today.</li>
+          <li class="fragment">So this response plan is honestly configured
+            <strong>Autonomous</strong> - that label matches what has always
+            actually happened, instead of describing an approval step that
+            was never real.</li>
+        </ul>
+      </div>
+      <div class="notes" hidden>
+        <p>Say this plainly and without hedging - this is the single most
+          important honesty moment in the whole demo. Do not soften it into
+          "sometimes" or "in some cases": across every real attempt this
+          repository made, the gate did not hold. Full evidence trail:
+          guide, Act beat, SPEC.md section 5 Scene 5, PLAN.md Milestone 5, and
+          the 2026-07-29 Act-beat evidence file.</p>
+      </div>
+    </section>
+
+    <section class="slide" id="s-tool-scoping" tabindex="-1">
+      <div class="slide-kicker">
+        <span class="chip chip--accent">Remediate and verify - 7 min</span>
+      </div>
+      <h2 data-slide-title>What actually governs this demo</h2>
+      <div class="slide-body">
+        <p class="lead">Not a portal click. <strong>Tool scoping and narrow
+          RBAC - proven, not pending.</strong></p>
+        <ul>
+          <li class="fragment"><code>incident-investigator</code> has no
+            Azure-write tool at all. Only <code>rollback-advisor</code> can
+            write, and its identity's one write-capable role is scoped to a
+            single Container App resource - whose entire action set cannot
+            reach any other resource type.</li>
+          <li class="fragment">Live-proven, not just configured: an ad hoc
+            probe asked the agent to write outside that scope. It refused,
+            zero tool calls made.</li>
+          <li class="fragment">Both real rollbacks succeeded with
+            <strong>zero <code>AuthorizationFailed</code></strong> errors -
+            the narrow role is confirmed sufficient.</li>
+        </ul>
+      </div>
+      <div class="notes" hidden>
+        <p>This is the reframed thesis of the whole safety story: capability
+          scoped this narrowly cannot be misused, whether or not a portal
+          approval prompt actually engages. The hooks stay configured as
+          documented intent, in case Microsoft fixes the platform defect -
+          but tool scoping plus narrow RBAC is what this demonstration
+          actually, provenly relies on.</p>
+      </div>
+    </section>
+
+    <section class="slide" id="s-agent-remediates-live" tabindex="-1">
+      <div class="slide-kicker">
+        <span class="chip chip--accent">Remediate and verify - 7 min</span>
+        <span class="chip chip--solid">Live</span>
+        <a class="chip" href="../guide/index.html#beat-act">Guide: Act</a>
+      </div>
+      <h2 data-slide-title>Live: watch the agent remediate</h2>
+      <div class="slide-body">
+        <p>Narrate the incident thread as it happens - you do not run
+          anything yourself in this step.</p>
+        <ul>
+          <li class="fragment"><code>rollback-advisor</code> states the exact
+            command, then executes it for real under its own managed
+            identity.</li>
+          <li class="fragment">Open the Azure Activity Log and show its
+            <code>caller</code> field: it names the agent's own identity -
+            real, attributable proof of who changed production and when.</li>
+          <li class="fragment">Measured 2026-07-29: the write lands in the
+            Activity Log <strong>4-5 seconds</strong> after the agent's tool
+            call on the first two runs; a third run, on a rebuilt
+            environment, confirmed the same identity attribution again.</li>
+        </ul>
+        <p class="fragment">If the agent's own written summary is slow to
+          appear, the traffic shift has likely already happened - check
+          <code>demo verify</code>, don't just wait on the narrative text.</p>
+      </div>
+      <div class="notes" hidden>
+        <p>This is the beat's dramatic peak - not a fake Approve button, a
+          real audit trail of the agent's own identity acting. Narrate it as
+          the payoff of the honesty slides before it: "the platform's
+          approval click doesn't hold today, so we didn't pretend it does -
+          watch it act, then let's independently prove who really did it."
+          Run <code>labctl status</code> beforehand if you want the UAMI
+          principal ID on screen for the comparison. On the rebuilt-
+          environment run the real write completed on schedule but
+          <code>rollback-advisor</code>'s own final summary was slow to post
+          because it hit its own turn limit mid-verification - the mitigation
+          was not delayed, only its narration was. See the guide's Act beat
+          for the full, root-caused explanation if this happens live.</p>
+      </div>
+    </section>
+
+    <section class="slide" id="s-verify-live" tabindex="-1">
+      <div class="slide-kicker">
+        <span class="chip chip--accent">Remediate and verify - 7 min</span>
+        <span class="chip chip--solid">Live</span>
+        <a class="chip" href="../guide/index.html#beat-verify">Guide: Verify</a>
+      </div>
+      <h2 data-slide-title>Live: prove recovery</h2>
+      <div class="slide-body">
+        <pre class="command-block"><code>& 'labctl\.venv\Scripts\labctl.exe' demo verify bad-deployment</code></pre>
+        <ul>
+          <li class="fragment">Checkout journey succeeds again.</li>
+          <li class="fragment">Production traffic is back on the known-good
+            revision.</li>
+          <li class="fragment">Failure rate is back under threshold; the
+            alert resolves or shows recovery telemetry.</li>
+        </ul>
+      </div>
+      <div class="notes" hidden>
+        <p>Do not declare success from the agent's own claim alone - see
+          AGENTS.md's "Real workload and incidents" rule. If the agent has
+          not acted within a few minutes, run <code>demo reset
+          bad-deployment</code> yourself as the fallback safety net and say so
+          plainly before moving on.</p>
+      </div>
+    </section>
+
+    <!-- ======================= SEGMENT 6: EXTENSIBILITY, MEMORY, SCHEDULING, COST (3 min) ======================= -->
+
+    <section class="slide" id="s-feature-tour" tabindex="-1">
+      <div class="slide-kicker">
+        <span class="chip chip--accent">Extensibility and cost - 3 min</span>
+      </div>
+      <h2 data-slide-title>Reusing the same environment</h2>
+      <div class="slide-body two-col">
+        <div class="card fragment">
+          <h3>Skills and subagents</h3>
+          <ul>
+            <li>triage-checkout-failures</li>
+            <li>incident-investigator</li>
+            <li>rollback-advisor</li>
+          </ul>
+        </div>
+        <div class="card fragment">
+          <h3>Guardrails and memory</h3>
+          <ul>
+            <li>Hooks: require-approval-for-changes, deny-destructive-deletes
+              - documented intent, not the operative gate (see Act)</li>
+            <li>Common prompts: investigation-guidelines, safety-rules</li>
+            <li>This incident's own knowledge, uploaded for the next one -
+              pending confirmed memory-search indexing before we call it
+              retained</li>
+          </ul>
+        </div>
+      </div>
+      <div class="notes" hidden>
+        <p>One agent, one environment, reused for the whole demo - nothing
+          here required a new deployment.</p>
+      </div>
+    </section>
+
+    <section class="slide" id="s-scheduled" tabindex="-1">
+      <div class="slide-kicker">
+        <span class="chip chip--accent">Extensibility and cost - 3 min</span>
+      </div>
+      <h2 data-slide-title>It keeps working between incidents</h2>
+      <div class="slide-body">
+        <p class="lead">Scheduled task <code>daily-reliability-summary</code>
+          runs on its own cadence and reports on service health without
+          anyone asking.</p>
+        <p class="fragment chip">Requires elapsed time to have produced a
+          run - shown as a described capability today, not a live trigger.</p>
+      </div>
+      <div class="notes" hidden>
+        <p>Be explicit that this feature needs elapsed time/prior schedule
+          firing to show a populated run, per AGENTS.md's labeling
+          requirement for time-dependent features.</p>
+      </div>
+    </section>
+
+    <section class="slide" id="s-cost-recap" tabindex="-1">
+      <div class="slide-kicker">
+        <span class="chip chip--accent">Extensibility and cost - 3 min</span>
+        <span class="chip chip--solid">Live</span>
+      </div>
+      <h2 data-slide-title>Live: cost and governance recap</h2>
+      <div class="slide-body">
+        <pre class="command-block"><code>& 'labctl\.venv\Scripts\labctl.exe' status</code></pre>
+        <p class="fragment">Shows the agent is still running, its always-on
+          cost posture, connector health, and RBAC - the same command from
+          the very first live slide.</p>
+      </div>
+      <div class="notes" hidden>
+        <p>Coming back to the same command bookends the demo and reinforces
+          that nothing about cost or safety was hidden.</p>
+      </div>
+    </section>
+
+    <!-- ======================= SEGMENT 7: ADOPTION GUIDANCE (2 min) ======================= -->
+
+    <section class="slide" id="s-adopt" tabindex="-1">
+      <div class="slide-kicker">
+        <span class="chip chip--accent">Adoption guidance - 2 min</span>
+        <a class="chip" href="../guide/index.html#adoption">Guide: adoption</a>
+      </div>
+      <h2 data-slide-title>Where to start in your environment</h2>
+      <div class="slide-body">
+        <ol>
+          <li class="fragment">Scope the agent to one workload resource group first.</li>
+          <li class="fragment">Connect Application Insights, Log Analytics, and Azure Monitor.</li>
+          <li class="fragment">Start in Review mode, but verify the approval gate actually holds
+            in your subscription before trusting it - if it does not, tool-scope
+            write access the same way this demo does.</li>
+          <li class="fragment">Write down one real runbook before your first live incident.</li>
+        </ol>
+      </div>
+      <div class="notes" hidden>
+        <p>Keep this concrete and short - this is the "what do I do Monday
+          morning" slide.</p>
+      </div>
+    </section>
+
+    <section class="slide" id="s-close" tabindex="-1">
+      <div class="slide-kicker">
+        <span class="chip chip--accent">Adoption guidance - 2 min</span>
+      </div>
+      <h2 data-slide-title>Thank you</h2>
+      <div class="slide-body">
+        <p class="lead">Full presenter guide, architecture, security, cost,
+          and troubleshooting detail:
+          <a href="../guide/index.html">docs/guide/index.html</a></p>
+        <p class="fragment">Source: github.com/tkubica12/azure-sre-agent</p>
+        <p class="fragment">Questions welcome.</p>
+      </div>
+      <div class="notes" hidden>
+        <p>Offer to re-run any single beat on request - the environment
+          stays live until <code>labctl destroy</code> is run at the end of
+          the rehearsal or session.</p>
+      </div>
+    </section>
+
+  </div>
+
+  <nav class="deck-controls" aria-label="Slide navigation controls">
+    <button id="nav-prev" class="btn btn--icon" type="button" aria-label="Previous slide">
+      <span aria-hidden="true">&#8592;</span>
+    </button>
+    <div class="progress-track" role="presentation">
+      <div id="progress-fill" class="progress-fill"></div>
+    </div>
+    <span id="progress-label" class="progress-label" aria-hidden="true"></span>
+    <button id="nav-next" class="btn btn--icon" type="button" aria-label="Next slide or reveal">
+      <span aria-hidden="true">&#8594;</span>
+    </button>
+    <button id="notes-toggle" class="btn" type="button" aria-pressed="false">Notes (N)</button>
+    <button id="fullscreen-toggle" class="btn" type="button" aria-pressed="false">Full screen (F)</button>
+    <button type="button" class="btn" data-theme-toggle aria-pressed="false">
+      <span data-theme-toggle-label>Dark mode</span>
+    </button>
+  </nav>
+
+  <aside id="notes-panel" class="notes-panel" aria-hidden="true" aria-label="Presenter notes">
+    <h2>Presenter notes</h2>
+    <div id="notes-body"></div>
+  </aside>
+</main>
+
+<script src="../assets/js/theme.js"></script>
+<script src="slides.js"></script>
+</body>
+</html>

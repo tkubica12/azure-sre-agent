@@ -1,0 +1,71 @@
+metadata:
+  name: require-approval-for-changes
+spec:
+  eventType: PreToolUse
+  hook:
+    type: prompt
+    prompt: >-
+      This action will restart, scale, or change traffic weights for a
+      resource in the PulseMart demo (for example shifting Container App
+      ingress traffic between revisions). If this hook is ever actually
+      enforced by the platform, require explicit human approval before this
+      action proceeds. Never allow it to execute automatically, even if the
+      recommendation seems obviously correct.
+    # NOTE (product-owner decision, 2026-07-30 -- see PLAN.md Milestone 5
+    # "Act beat rework" and SPEC.md section 5 Scene 5): this hook is kept as
+    # documented, currently-inert intent, not as an operative control. The
+    # `checkout-5xx` response plan is deliberately configured
+    # `agentMode: Autonomous` (see
+    # `agent/automations/incident-filters/checkout-5xx.yaml`) because that
+    # honestly matches the observed behavior below -- claiming `Review` here
+    # while this hook silently does not block would be describing intent,
+    # not reality. If Microsoft ever fixes the persistence defect described
+    # below, this hook would then engage for `rollback-advisor`'s real write
+    # tool without any repository change; until then, tool-scoping (only
+    # `rollback-advisor` holds `RunAzCliWriteCommands`) and the narrow
+    # "Container Apps Contributor" RBAC scope are the demo's actual,
+    # live-proven controls.
+    #
+    # Live-verified 2026-07-29 (PLAN.md Milestone 5): this agent's actual
+    # write tool is the generic `RunAzCliWriteCommands` (there is no
+    # granular `set_traffic`/`shift_traffic` tool this agent exposes), so
+    # the previous matcher never matched any real tool call and this hook's
+    # prompt was never evaluated for the live traffic-rollback writes this
+    # milestone exercised -- both real rollbacks executed with zero
+    # `/api/v1/approvals/{threadId}` entries ever appearing. Matching the
+    # real tool name is necessary for this hook to run at all.
+    #
+    # **Second, definitive round of live testing, 2026-07-29 (matcher
+    # already fixed to `^RunAzCliWriteCommands$` below)**: even after (a)
+    # removing the agent UAMI's "SRE Agent Administrator" role (the
+    # self-approval hypothesis: see `infra/modules/sre_agent`'s
+    # `grant_uami_agent_administrator`) and (b) confirming, via a brand-new
+    # incident thread (id `575306b0-...`) whose own `agentMode` field read
+    # `"Review"` at investigation time, the mutating
+    # `az containerapp ingress traffic set` command still executed for real
+    # (Activity Log entry ~5s after the tool-call message) with
+    # `GET /api/v1/approvals/{threadId}` empty throughout and every
+    # message's `hookExecution`/`approval` fields staying null the entire
+    # thread. A separate probe also showed a *Stop*-event, `onDemand`
+    # activation-mode hook (the shape Microsoft's own
+    # `deployment-compliance` reference lab uses for its approval demo)
+    # persists `eventType`/`activationMode`/`hook.timeout` correctly but
+    # still silently drops `hook.failMode`/`hook.maxRejections` on PUT --
+    # the same class of defect PLAN.md Milestone 4 found for this hook
+    # shape's `permissionDecision`/`enabled` fields. Conclusion: no
+    # `PreToolUse` (or `Stop`) hook configuration this repository can PUT
+    # via the current data-plane API reliably blocks a write in this
+    # preview build. This hook is kept as documented intent and so it
+    # starts working automatically if/when Microsoft fixes the underlying
+    # persistence defect. As of the 2026-07-30 product-owner decision,
+    # `rollback-advisor` DOES hold `RunAzCliWriteCommands` (see
+    # `agent/config/subagents/rollback-advisor.yaml`) and executes the real
+    # mitigation itself, under its own identity, in Autonomous mode; the
+    # demo's actual governance controls are tool-scoping (only
+    # `rollback-advisor` can write, and only for Container App revision/
+    # traffic operations) and the narrow "Container Apps Contributor" RBAC
+    # scope, not this hook. See SPEC.md section 5 Scene 5 and PLAN.md
+    # Milestone 5 for the full evidence trail.
+    matcher: ^RunAzCliWriteCommands$
+  permissionDecision: allow
+  enabled: true

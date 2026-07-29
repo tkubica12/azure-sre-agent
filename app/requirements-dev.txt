@@ -1,0 +1,4 @@
+# Additional pinned dependencies needed only to run app/tests locally.
+-r requirements.txt
+pytest==8.4.2
+httpx==0.28.1

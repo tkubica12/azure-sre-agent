@@ -1,0 +1,321 @@
+/*
+ * Slide deck layout. The deck fills the viewport and letterboxes a fixed
+ * 16:9 stage so it looks correct in fullscreen on any monitor, while still
+ * reflowing sanely at narrower widths (rehearsal on a laptop, a review on a
+ * phone/tablet).
+ */
+
+html,
+body {
+  height: 100%;
+}
+
+body.slides-body {
+  overflow: hidden;
+  background: var(--bg-inset);
+}
+
+#deck {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  background: var(--bg-inset);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#deck:fullscreen,
+#deck:-webkit-full-screen {
+  background: var(--bg-inset);
+}
+
+.stage {
+  position: relative;
+  width: min(100vw, calc(100vh * 16 / 9));
+  height: min(100vh, calc(100vw * 9 / 16));
+  background: var(--bg);
+  box-shadow: var(--shadow-md);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.slide {
+  position: absolute;
+  inset: 0;
+  display: none;
+  flex-direction: column;
+  min-width: 0;
+  padding: clamp(1.25rem, 3.2vw, 3.25rem) clamp(1.75rem, 5vw, 5rem);
+  overflow: auto;
+}
+
+.slide.is-active {
+  display: flex;
+}
+
+.slide-kicker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: clamp(0.5rem, 1.6vw, 1.25rem);
+}
+
+.slide-kicker .segment-name {
+  font-weight: 700;
+  color: var(--accent-strong);
+}
+
+.slide-eyebrow {
+  font-size: clamp(0.7rem, 1.1vw, 0.85rem);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.slide h1,
+.slide h2 {
+  margin: 0 0 clamp(0.6rem, 1.8vw, 1.1rem);
+  line-height: 1.15;
+}
+
+.slide h1 {
+  font-size: clamp(1.6rem, 4.2vw, 3rem);
+}
+
+.slide h2 {
+  font-size: clamp(1.3rem, 3.2vw, 2.15rem);
+}
+
+.slide .slide-body {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(0.5rem, 1.4vw, 1rem);
+  font-size: clamp(0.85rem, 1.7vw, 1.15rem);
+  overflow-wrap: break-word;
+}
+
+.slide ul,
+.slide ol {
+  margin: 0;
+  padding-left: 1.3em;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: clamp(0.3rem, 1vw, 0.6rem);
+}
+
+.slide li {
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+.slide .lead {
+  font-size: clamp(1rem, 2.1vw, 1.4rem);
+  color: var(--text-muted);
+  max-width: 46ch;
+}
+
+.two-col {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: clamp(1rem, 2.5vw, 2rem);
+  flex: 1;
+  min-height: 0;
+}
+
+.card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: clamp(0.75rem, 1.8vw, 1.25rem);
+  background: var(--bg-elevated);
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+.card h3 {
+  margin-top: 0;
+  font-size: clamp(0.95rem, 1.9vw, 1.2rem);
+}
+
+.command-block {
+  margin: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.diagram-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.diagram-wrap svg,
+.architecture-diagram {
+  height: 100%;
+  width: auto;
+  max-width: 100%;
+}
+
+/* Fragments (progressive disclosure) */
+.fragment {
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity var(--motion-med) var(--ease-standard),
+    transform var(--motion-med) var(--ease-standard);
+}
+
+.fragment.is-revealed {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fragment {
+    transition: none;
+    transform: none;
+  }
+}
+
+/* Deep-link target slides render fully revealed already (JS sets this on
+   load), so there is no motion to reduce there either. */
+
+.segment-timing {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Controls */
+.deck-controls {
+  position: absolute;
+  left: 50%;
+  bottom: clamp(0.5rem, 1.6vh, 1.25rem);
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  z-index: 20;
+  opacity: 0.55;
+  transition: opacity var(--motion-fast) var(--ease-standard);
+}
+
+.deck-controls:hover,
+.deck-controls:focus-within {
+  opacity: 1;
+}
+
+.deck-controls .btn--icon {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+}
+
+.progress-track {
+  width: clamp(6rem, 16vw, 14rem);
+  height: 5px;
+  border-radius: 999px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  transition: width var(--motion-med) var(--ease-standard);
+}
+
+.progress-label {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* Presenter notes panel */
+.notes-panel {
+  position: absolute;
+  inset: auto 0 0 0;
+  max-height: 45%;
+  background: var(--bg);
+  border-top: 2px solid var(--accent);
+  box-shadow: var(--shadow-md);
+  transform: translateY(100%);
+  transition: transform var(--motion-med) var(--ease-standard);
+  z-index: 30;
+  overflow: auto;
+  padding: var(--space-4) clamp(1rem, 4vw, 3rem);
+}
+
+.notes-panel.is-open {
+  transform: translateY(0);
+}
+
+.notes-panel h2 {
+  margin-top: 0;
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notes-panel,
+  .deck-controls,
+  .progress-fill {
+    transition: none;
+  }
+}
+
+/* Narrower windows: relax the strict 16:9 letterbox so content stays
+   legible instead of shrinking to illegible size. */
+@media (max-width: 700px), (max-height: 420px) {
+  .stage {
+    width: 100vw;
+    height: 100vh;
+    border-radius: 0;
+  }
+
+  .two-col {
+    grid-template-columns: 1fr;
+  }
+
+  .deck-controls {
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-2);
+  }
+
+  .progress-track {
+    display: none;
+  }
+}
+
+.print-hint {
+  display: none;
+}
+
+@media print {
+  .deck-controls,
+  .notes-panel {
+    display: none;
+  }
+
+  .slide {
+    display: flex !important;
+    position: static;
+    page-break-after: always;
+    height: auto;
+  }
+}

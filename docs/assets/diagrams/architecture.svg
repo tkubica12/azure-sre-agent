@@ -1,0 +1,143 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 640" role="img"
+     aria-labelledby="arch-title arch-desc" class="architecture-diagram">
+  <title id="arch-title">Azure SRE Agent demonstration architecture</title>
+  <desc id="arch-desc">
+    The presenter drives labctl, a Python CLI, which applies Terraform to two
+    resource groups, runs an ACR cloud build, and calls the Azure SRE Agent
+    data plane. The agent resource group contains the Microsoft.App/agents
+    resource, its managed identities, and its own Application Insights and
+    Log Analytics. The workload resource group contains the Azure Container
+    Registry, the PulseMart Container App, its Log Analytics workspace, its
+    Application Insights instance, and the checkout failure alert. The
+    Container Registry supplies images to the Container App, which sends
+    telemetry to its Log Analytics workspace and Application Insights
+    instance. Application Insights feeds the alert, the alert reaches the
+    agent through the Azure Monitor incident platform, and the agent reads
+    Application Insights, Log Analytics, and the Container App, and connects
+    to the GitHub repository for source context, to investigate and, once a
+    human approves, to remediate.
+  </desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7"
+            orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--diagram-line, #484644)"></path>
+    </marker>
+  </defs>
+
+  <style>
+    .architecture-diagram { font-family: var(--font-sans, "Segoe UI", system-ui, sans-serif); }
+    .architecture-diagram text { fill: var(--diagram-text, #201f1e); }
+    .architecture-diagram .lane-label { fill: var(--diagram-muted, #484644); font-size: 15px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+    .architecture-diagram .node-title { font-size: 15px; font-weight: 700; }
+    .architecture-diagram .node-sub { font-size: 12.5px; fill: var(--diagram-muted, #484644); }
+    .architecture-diagram .box { fill: var(--diagram-surface, #f3f2f1); stroke: var(--diagram-border, #8a8886); stroke-width: 1.5; rx: 10; }
+    .architecture-diagram .box--group { fill: none; stroke: var(--diagram-border, #8a8886); stroke-width: 1.5; stroke-dasharray: 6 5; rx: 14; }
+    .architecture-diagram .box--accent { stroke: var(--diagram-accent, #0078d4); stroke-width: 2; }
+    .architecture-diagram .edge { fill: none; stroke: var(--diagram-line, #484644); stroke-width: 1.6; marker-end: url(#arrow); }
+    .architecture-diagram .edge--accent { stroke: var(--diagram-accent, #0078d4); stroke-width: 2; marker-end: url(#arrow); }
+  </style>
+
+  <!-- Presenter and labctl -->
+  <rect class="box box--accent" x="390" y="12" width="220" height="52"></rect>
+  <text class="node-title" x="500" y="34" text-anchor="middle">Presenter</text>
+  <text class="node-sub" x="500" y="52" text-anchor="middle">runs labctl, approves actions</text>
+
+  <path class="edge" d="M500,64 L500,96"></path>
+
+  <rect class="box box--accent" x="360" y="98" width="280" height="52"></rect>
+  <text class="node-title" x="500" y="120" text-anchor="middle">labctl (Python CLI)</text>
+  <text class="node-sub" x="500" y="138" text-anchor="middle">preflight - deploy - provision - verify - demo - destroy</text>
+
+  <!-- Fan-out to three control paths -->
+  <path class="edge" d="M420,150 C 350,175 230,185 175,206"></path>
+  <path class="edge" d="M470,150 L 400,206"></path>
+  <path class="edge" d="M600,150 L 690,206"></path>
+  <path class="edge" d="M630,150 C 720,175 800,185 845,206"></path>
+
+  <rect class="box" x="90" y="208" width="170" height="46"></rect>
+  <text class="node-title" x="175" y="228" text-anchor="middle">Terraform</text>
+  <text class="node-sub" x="175" y="244" text-anchor="middle">infra as code</text>
+
+  <rect class="box" x="315" y="208" width="170" height="46"></rect>
+  <text class="node-title" x="400" y="228" text-anchor="middle">ACR cloud build</text>
+  <text class="node-sub" x="400" y="244" text-anchor="middle">az acr build</text>
+
+  <rect class="box" x="605" y="208" width="170" height="46"></rect>
+  <text class="node-title" x="690" y="228" text-anchor="middle">Agent data plane</text>
+  <text class="node-sub" x="690" y="244" text-anchor="middle">knowledge - skills - hooks</text>
+
+  <rect class="box" x="760" y="208" width="170" height="46"></rect>
+  <text class="node-title" x="845" y="228" text-anchor="middle">Traffic control</text>
+  <text class="node-sub" x="845" y="244" text-anchor="middle">revisions - synthetic load</text>
+
+  <!-- Two resource groups -->
+  <rect class="box--group" x="40" y="290" width="430" height="330"></rect>
+  <text class="lane-label" x="60" y="316">Agent resource group - rg-sre-agent-demo</text>
+
+  <rect class="box--group" x="530" y="290" width="430" height="330"></rect>
+  <text class="lane-label" x="550" y="316">Workload resource group - rg-sre-agent-workload-demo</text>
+
+  <path class="edge" d="M175,254 L175,290"></path>
+  <path class="edge" d="M690,254 L 300,290"></path>
+  <path class="edge" d="M400,254 L 700,290"></path>
+  <path class="edge" d="M845,254 L 845,290"></path>
+
+  <!-- Agent RG contents -->
+  <rect class="box box--accent" x="70" y="340" width="370" height="50"></rect>
+  <text class="node-title" x="255" y="362" text-anchor="middle">Microsoft.App/agents - sre-agent-demo</text>
+  <text class="node-sub" x="255" y="380" text-anchor="middle">access High - mode Review - model Anthropic/Automatic</text>
+
+  <rect class="box" x="70" y="410" width="175" height="46"></rect>
+  <text class="node-title" x="157" y="430" text-anchor="middle">Managed identities</text>
+  <text class="node-sub" x="157" y="446" text-anchor="middle">least-privilege RBAC</text>
+
+  <rect class="box" x="265" y="410" width="175" height="46"></rect>
+  <text class="node-title" x="352" y="430" text-anchor="middle">Agent telemetry</text>
+  <text class="node-sub" x="352" y="446" text-anchor="middle">own App Insights + Log Analytics</text>
+
+  <rect class="box" x="70" y="474" width="370" height="44"></rect>
+  <text class="node-title" x="255" y="494" text-anchor="middle">Connectors</text>
+  <text class="node-sub" x="255" y="509" text-anchor="middle">app-insights - log-analytics - azure-monitor</text>
+
+  <rect class="box" x="70" y="538" width="370" height="58"></rect>
+  <text class="node-title" x="255" y="558" text-anchor="middle">GitHub source connection</text>
+  <text class="node-sub" x="255" y="575" text-anchor="middle">tkubica12/azure-sre-agent</text>
+  <text class="node-sub" x="255" y="589" text-anchor="middle">runbooks, code, response plan</text>
+
+  <!-- Workload RG contents -->
+  <rect class="box" x="560" y="340" width="160" height="46"></rect>
+  <text class="node-title" x="640" y="360" text-anchor="middle">Container Registry</text>
+  <text class="node-sub" x="640" y="376" text-anchor="middle">crpulsemartdemo...</text>
+
+  <rect class="box box--accent" x="750" y="340" width="190" height="50"></rect>
+  <text class="node-title" x="845" y="360" text-anchor="middle">Container App</text>
+  <text class="node-sub" x="845" y="378" text-anchor="middle">ca-pulsemart-demo - multiple revisions</text>
+
+  <path class="edge" d="M720,363 L750,363"></path>
+
+  <rect class="box" x="560" y="410" width="160" height="46"></rect>
+  <text class="node-title" x="640" y="430" text-anchor="middle">Log Analytics</text>
+  <text class="node-sub" x="640" y="446" text-anchor="middle">law-pulsemart-demo</text>
+
+  <rect class="box" x="760" y="410" width="170" height="46"></rect>
+  <text class="node-title" x="845" y="430" text-anchor="middle">Application Insights</text>
+  <text class="node-sub" x="845" y="446" text-anchor="middle">appi-pulsemart-demo</text>
+
+  <path class="edge" d="M845,390 L845,410"></path>
+  <path class="edge" d="M810,433 C 730,433 715,433 720,433"></path>
+
+  <rect class="box box--accent" x="700" y="478" width="190" height="46"></rect>
+  <text class="node-title" x="795" y="498" text-anchor="middle">Azure Monitor alert</text>
+  <text class="node-sub" x="795" y="513" text-anchor="middle">alert-pulsemart-checkout-5xx</text>
+
+  <path class="edge" d="M870,456 L830,478"></path>
+
+  <!-- Cross-RG edges: alert to agent, agent reads telemetry + acts on the app -->
+  <path class="edge--accent" d="M780,478 C 620,470 500,460 400,400"></path>
+  <text class="node-sub" x="560" y="465" text-anchor="middle">alert fires -&gt; incident</text>
+
+  <path class="edge--accent" d="M300,390 C 420,430 560,440 700,436"></path>
+  <text class="node-sub" x="500" y="422" text-anchor="middle">investigate (read) - remediate (approved write)</text>
+
+  <path class="edge" d="M240,568 C 340,568 420,520 300,390"></path>
+</svg>

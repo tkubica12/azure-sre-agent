@@ -1,0 +1,69 @@
+# --- Repository-local secrets and generated configuration ---
+config.local.toml
+*.local.toml
+# Defence in depth: `config.toml` is not the filename labctl reads
+# (`config.local.toml` is), but it is an easy mistake to make and would carry
+# the same subscription/tenant values, so it is ignored too.
+config.toml
+.env
+.env.*
+
+# --- Terraform ---
+# .terraform.lock.hcl is intentionally NOT ignored: it pins exact provider
+# versions and should be committed alongside the configuration.
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfplan.*
+.state/
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# --- labctl / operator-generated artifacts ---
+.evidence/
+*.evidence.json
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.Python
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.cover
+.pytype/
+pip-wheel-metadata/
+
+# --- Node (docs tooling, if introduced) ---
+node_modules/
+
+# --- Editors and OS ---
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# --- Logs and temp ---
+*.log
+*.tmp
+*.bak

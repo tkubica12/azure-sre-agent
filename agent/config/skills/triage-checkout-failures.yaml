@@ -1,0 +1,14 @@
+metadata:
+  name: triage-checkout-failures
+  description: >-
+    Triage PulseMart checkout HTTP 500 failures: confirm scope, correlate
+    with the active Container Apps revision, and find the root cause using
+    Application Insights, Log Analytics, and source.
+  spec:
+    tools:
+    - RunAzCliReadCommands
+    - QueryAppInsightsUsingAppId
+    - QueryLogAnalyticsByWorkspaceId
+    - SearchMemory
+skillContent: skills/triage-checkout-failures.md
+additionalFiles: []

@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PulseMart</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1b1b1b;
+    --muted: #5f6368;
+    --border: #e2e2e2;
+    --accent: #0078d4;
+    --danger: #c62828;
+    --ok: #1b7a3d;
+    --panel: #f7f7f8;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+  }
+  header {
+    padding: 1.5rem 2rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  header h1 { font-size: 1.25rem; margin: 0; font-weight: 600; }
+  header .badge {
+    display: inline-block;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border: 1px solid var(--accent);
+    color: var(--accent);
+  }
+  main {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 2rem;
+    display: grid;
+    gap: 1.5rem;
+  }
+  section {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--panel);
+    padding: 1.25rem 1.5rem;
+  }
+  section h2 {
+    font-size: 0.95rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    margin: 0 0 0.75rem 0;
+  }
+  dl {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 0.4rem 1rem;
+    margin: 0;
+  }
+  dt { color: var(--muted); }
+  dd { margin: 0; font-variant-numeric: tabular-nums; }
+  button {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 0.65rem 1.4rem;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:disabled { opacity: 0.6; cursor: default; }
+  button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #checkout-result {
+    margin-top: 1rem;
+    padding: 0.85rem 1rem;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    display: none;
+  }
+  #checkout-result.ok { display: block; background: #e6f4ea; color: var(--ok); border: 1px solid var(--ok); }
+  #checkout-result.error { display: block; background: #fdecea; color: var(--danger); border: 1px solid var(--danger); }
+  .status-ok { color: var(--ok); font-weight: 600; }
+  footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 1.5rem; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>PulseMart</h1>
+  <span class="badge" id="env-badge">&hellip;</span>
+</header>
+<main>
+  <section aria-labelledby="status-heading">
+    <h2 id="status-heading">Service status</h2>
+    <dl id="status-fields">
+      <dt>Health</dt><dd id="f-health">checking&hellip;</dd>
+      <dt>Release</dt><dd id="f-release">&ndash;</dd>
+      <dt>Revision</dt><dd id="f-revision">&ndash;</dd>
+      <dt>Environment</dt><dd id="f-environment">&ndash;</dd>
+      <dt>Uptime</dt><dd id="f-uptime">&ndash;</dd>
+    </dl>
+  </section>
+
+  <section aria-labelledby="checkout-heading">
+    <h2 id="checkout-heading">Checkout journey</h2>
+    <p>Place a synthetic order to exercise the checkout API and generate live telemetry.</p>
+    <button id="checkout-button" type="button">Place test order</button>
+    <div id="checkout-result" role="status" aria-live="polite"></div>
+  </section>
+</main>
+<footer>PulseMart &middot; synthetic demo workload &middot; no customer data</footer>
+<script>
+(function () {
+  "use strict";
+
+  function setText(id, value) {
+    document.getElementById(id).textContent = value;
+  }
+
+  function refreshStatus() {
+    fetch("/api/status")
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        setText("f-release", data.release);
+        setText("f-revision", data.revision);
+        setText("f-environment", data.environment);
+        setText("f-uptime", data.uptime_seconds + "s");
+        document.getElementById("env-badge").textContent = data.environment;
+      })
+      .catch(function () {
+        setText("f-release", "unavailable");
+      });
+
+    fetch("/healthz")
+      .then(function (r) {
+        var el = document.getElementById("f-health");
+        if (r.ok) {
+          el.textContent = "healthy";
+          el.className = "status-ok";
+        } else {
+          el.textContent = "unhealthy (" + r.status + ")";
+        }
+      })
+      .catch(function () {
+        setText("f-health", "unreachable");
+      });
+  }
+
+  function placeOrder() {
+    var button = document.getElementById("checkout-button");
+    var result = document.getElementById("checkout-result");
+    button.disabled = true;
+    result.className = "";
+    result.textContent = "Placing order\u2026";
+    result.style.display = "block";
+
+    fetch("/api/checkout", { method: "POST" })
+      .then(function (r) {
+        return r.json().then(function (body) { return { ok: r.ok, status: r.status, body: body }; });
+      })
+      .then(function (outcome) {
+        if (outcome.ok) {
+          result.className = "ok";
+          result.textContent = "Order " + outcome.body.order_id + " confirmed ($" +
+            outcome.body.amount_usd + ").";
+        } else {
+          result.className = "error";
+          result.textContent = "Order " + outcome.body.order_id + " failed (HTTP " +
+            outcome.status + "): " + outcome.body.error;
+        }
+      })
+      .catch(function () {
+        result.className = "error";
+        result.textContent = "Checkout request could not be completed.";
+      })
+      .finally(function () {
+        button.disabled = false;
+      });
+  }
+
+  document.getElementById("checkout-button").addEventListener("click", placeOrder);
+  refreshStatus();
+  setInterval(refreshStatus, 15000);
+})();
+</script>
+</body>
+</html>

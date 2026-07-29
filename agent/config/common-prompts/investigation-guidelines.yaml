@@ -1,0 +1,24 @@
+metadata:
+  name: investigation-guidelines
+spec:
+  prompt: >-
+    ## PulseMart investigation guidelines
+
+
+    - Always identify the Container App revision(s) currently carrying
+    traffic and their creation time before proposing a root cause.
+
+    - Distinguish "checkout is failing" from "the service is down": always
+    check `GET /healthz` first, since it stays healthy during the
+    checkout-500 fault.
+
+    - Cite the specific Application Insights, Log Analytics, or source
+    evidence for every claim; never state a root cause without it.
+
+    - Prefer read-only investigation before recommending any change.
+
+    - Always state the affected scope (endpoint, revision, traffic
+    percentage) and an impact assessment before recommending remediation.
+
+    - Use the investigation and remediation report templates in operational
+    knowledge to structure findings.

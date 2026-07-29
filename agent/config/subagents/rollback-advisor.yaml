@@ -1,0 +1,46 @@
+metadata:
+  name: rollback-advisor
+spec:
+  instructions: subagents/rollback-advisor.instructions.md
+  handoffDescription: >-
+    Executes a traffic rollback to the known-good PulseMart Container App
+    revision based on the incident-investigator's findings: states the exact
+    command first, then runs it for real under the agent's own identity, then
+    verifies and reports recovery.
+  handoffs: []
+  # Product-owner decision, 2026-07-30 (see PLAN.md Milestone 5 "Act beat
+  # rework" and SPEC.md section 5 Scene 5): restore agent-executed
+  # remediation and frame it honestly as AUTONOMOUS-mode remediation, rather
+  # than pretending a Review-mode Approve/Deny gate exists. Live-verified
+  # 2026-07-29 (the prior test cycle): with `RunAzCliWriteCommands` present,
+  # neither the agent-wide Review-mode default nor a `PreToolUse`/`Stop` hook
+  # reliably paused execution before a mutating
+  # `az containerapp ingress traffic set` ran -- see
+  # `agent/config/hooks/require-approval-for-changes.yaml` and PLAN.md
+  # Milestone 5 for the full evidence trail. Since no working approval gate
+  # exists in this preview build, keeping this subagent read-only was making
+  # a false promise (an unused write path someone could re-enable later
+  # without re-deriving why it was removed) while pushing the real
+  # mitigation onto the presenter. The demonstrably reliable control instead
+  # is TOOL SCOPING: this is the *only* subagent in `agent/` that holds
+  # `RunAzCliWriteCommands` at all (`incident-investigator` structurally
+  # cannot write -- see its own `tools:` list and
+  # `agent/config/subagents/incident-investigator.instructions.md`), and the
+  # agent's own managed identity holds "Container Apps Contributor" scoped
+  # to just the `ca-pulsemart-demo` Container App resource (see
+  # `infra/modules/sre_agent`'s `workload_access_level = "narrow"`), not
+  # Contributor over the resource group. A write attempted against any other
+  # resource in `rg-sre-agent-workload-demo` (the Log Analytics workspace,
+  # the container registry, the alert rule, etc.) fails with
+  # `AuthorizationFailed` at the ARM level regardless of what this subagent's
+  # instructions say -- see PLAN.md Milestone 5 for a live-captured example.
+  tools:
+  - RunAzCliReadCommands
+  - RunAzCliWriteCommands
+  - QueryAppInsightsUsingAppId
+  - SearchMemory
+  agentType: Autonomous
+  temperature: 0.2
+  enableSkills: true
+  allowedSkills:
+  - triage-checkout-failures

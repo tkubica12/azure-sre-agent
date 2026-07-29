@@ -1,0 +1,93 @@
+/*
+ * Shared design tokens for the Azure SRE Agent demonstration presenter
+ * material (slides and guide).
+ *
+ * Palette is deliberately restricted to black, white, grayscale, and
+ * Microsoft blue (#0078D4) plus its tints/shades, per AGENTS.md "Visual
+ * system". No other hues are introduced anywhere in this deck or guide.
+ *
+ * Light values are the default; [data-theme="dark"] on <html> overrides them.
+ * theme.js sets data-theme from a persisted choice (falling back to the
+ * operating system's prefers-color-scheme on first visit).
+ *
+ * Every text/background pairing below has been checked against WCAG 2.1
+ * contrast minimums (>= 4.5:1 for normal text, >= 3:1 for large text and
+ * interactive component outlines).
+ */
+
+:root {
+  color-scheme: light;
+
+  --bg: #ffffff;
+  --bg-elevated: #f3f2f1;
+  --bg-inset: #faf9f8;
+  --text: #201f1e;
+  --text-muted: #484644;
+  --border: #d2d0ce;
+  --control-border: #8a8886;
+  --accent: #0078d4;
+  --accent-strong: #004578;
+  --accent-contrast: #ffffff;
+  --focus-ring: #0078d4;
+
+  --font-sans: "Segoe UI", "Segoe UI Variable", system-ui, -apple-system,
+    "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "Cascadia Code", "Consolas", "SFMono-Regular", Menlo, Consolas,
+    monospace;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 14px;
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --space-8: 4rem;
+
+  --shadow-sm: 0 1px 2px rgba(32, 31, 30, 0.08);
+  --shadow-md: 0 4px 16px rgba(32, 31, 30, 0.12);
+
+  --motion-fast: 120ms;
+  --motion-med: 220ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0.2, 1);
+
+  /* Aliases consumed by the inlined architecture diagram (see
+     docs/assets/diagrams/architecture.svg) so it re-themes with the rest of
+     the page instead of carrying its own hardcoded palette. */
+  --diagram-text: var(--text);
+  --diagram-muted: var(--text-muted);
+  --diagram-surface: var(--bg-elevated);
+  --diagram-border: var(--control-border);
+  --diagram-accent: var(--accent);
+  --diagram-line: var(--text-muted);
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #1b1a19;
+  --bg-elevated: #252423;
+  --bg-inset: #201f1e;
+  --text: #f3f2f1;
+  --text-muted: #c8c6c4;
+  --border: #3b3a39;
+  --control-border: #a19f9d;
+  --accent: #2899f5;
+  --accent-strong: #6cb8f6;
+  --accent-contrast: #000000;
+  --focus-ring: #2899f5;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 0ms;
+    --motion-med: 0ms;
+  }
+}

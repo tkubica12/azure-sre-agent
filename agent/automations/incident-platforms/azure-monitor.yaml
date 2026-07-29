@@ -1,0 +1,8 @@
+name: azure-monitor
+spec:
+  platformType: AzMonitor
+  displayName: Azure Monitor Alerts
+  description: >-
+    Receives fired Azure Monitor alerts for the PulseMart demo workload
+    (rg-sre-agent-workload-demo), including alert-pulsemart-checkout-5xx, as
+    Azure SRE Agent incidents.

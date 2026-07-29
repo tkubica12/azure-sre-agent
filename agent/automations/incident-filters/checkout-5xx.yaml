@@ -1,0 +1,38 @@
+metadata:
+  name: checkout-5xx
+spec:
+  incidentPlatform: AzMonitor
+  isEnabled: true
+  priorities:
+  - Sev2
+  titleContains: checkout
+  handlingAgent: incident-investigator
+  # Live-verified 2026-07-29 (PLAN.md Milestone 5): this per-response-plan
+  # field -- not the agent-wide `actionConfiguration.mode` -- is what
+  # actually gates whether a mutating action taken inside an incident
+  # thread this filter routes waits for human approval. Setting this to
+  # `Review` was tried first (the official template's own default; see
+  # `sreagent-templates/bicep/Apply-Extras.ps1`), on the theory that it
+  # would make "presenter approves the proposed rollback" a real gate. It
+  # did not: across three independent live cycles -- including one on a
+  # freshly created thread whose own `agentMode` field read `"Review"`, and
+  # one more after removing the agent UAMI's "SRE Agent Administrator" role
+  # to rule out self-approval -- the mutating
+  # `az containerapp ingress traffic set` write executed within seconds of
+  # the tool call regardless, with `GET /api/v1/approvals/{threadId}` empty
+  # throughout. See PLAN.md Milestone 5 and SPEC.md section 5 Scene 5 for
+  # the full evidence trail.
+  #
+  # Product-owner decision, 2026-07-30: since no build of this preview
+  # actually honors `Review` here, configuring `Review` while a
+  # write-capable subagent executes unattended would be describing intent,
+  # not observed behavior. `agentMode: Autonomous` matches what has always
+  # actually happened and is the honest label for this response plan. The
+  # demonstration's real, live-proven governance control is TOOL SCOPING
+  # (see `agent/config/subagents/rollback-advisor.yaml` and
+  # `agent/config/subagents/incident-investigator.yaml`) plus the narrow
+  # "Container Apps Contributor" RBAC scope (see
+  # `infra/modules/sre_agent`), not this field.
+  agentMode: Autonomous
+  deepInvestigationEnabled: false
+  maxAutomatedInvestigationAttempts: 3

@@ -1,0 +1,99 @@
+# Non-secret operator settings for the Azure SRE Agent demonstration.
+#
+# Copy this file to config.local.toml (git-ignored) and adjust values for your
+# environment. Never put secrets, tokens, or connection strings in either file;
+# `labctl` authenticates using your existing Azure CLI and GitHub CLI sessions.
+
+[azure]
+# Azure region for every demo resource. Must be a region where Azure SRE Agent
+# is currently supported. See SPEC.md section 3 and
+# https://learn.microsoft.com/azure/sre-agent/supported-regions
+region = "swedencentral"
+
+# Optional: pin a specific subscription ID. Leave blank to use the current
+# `az account show` default subscription. When set, every lifecycle command
+# (preflight/deploy/provision/verify/destroy) treats a mismatch between this
+# value and the active Azure CLI subscription as a FATAL error, not a
+# warning, and pins every subsequent Azure CLI call to this subscription
+# explicitly (see SPEC.md section 8 and AGENTS.md).
+subscription_id = ""
+
+# Optional: pin a specific tenant ID. Leave blank to use the current CLI tenant.
+# When set, a mismatch against the active Azure CLI tenant is also FATAL.
+tenant_id = ""
+
+[resource_groups]
+agent = "rg-sre-agent-demo"
+workload = "rg-sre-agent-workload-demo"
+
+[tags]
+# Applied to every Azure resource so ownership and cleanup scope are provable.
+repository = "azure-sre-agent"
+environment = "demo"
+owner = "change-me"
+deployment_id = "local"
+
+[github]
+# owner/repo used for the Azure SRE Agent source connection and `gh` checks.
+repository = "tkubica12/azure-sre-agent"
+
+[agent]
+# Name of the Azure SRE Agent resource (Microsoft.App/agents). Lowercase
+# alphanumeric with hyphens, 2-63 characters.
+name = "sre-agent-demo"
+
+# Monthly Azure Agent Unit allocation: a demo-sized cap (1-5000; see
+# labctl.config.MAX_SENSIBLE_MONTHLY_AAU_ALLOCATION and SPEC.md section 14).
+# Azure SRE Agent bills a fixed 4 AAUs/agent-hour always-on from creation
+# until deletion (https://learn.microsoft.com/azure/sre-agent/pricing-billing),
+# which alone totals ~2,880 AAU across a full month; 3000 leaves headroom for
+# that plus several incident-investigation passes. The official template's
+# own 10,000 default is a permissive ceiling, not a required minimum.
+monthly_aau_allocation = 3000
+
+# Agent runtime upgrade channel: "Stable" or "Preview". Matches the current
+# official Terraform template's default.
+upgrade_channel = "Preview"
+
+# Default LLM provider/model, verified live against the supportedAgentModels
+# ARM API for this subscription/region (see labctl preflight's
+# agent-model-availability check). "Anthropic"/"Automatic" is the documented
+# default in the official Terraform template.
+model_provider = "Anthropic"
+model_name = "Automatic"
+
+# Workload RBAC access level: "narrow" (default, least privilege: Reader +
+# Log Analytics Reader on the workload RG, Container Apps Contributor scoped
+# to the Container App) or "broad" (Contributor across the whole workload
+# resource group; escape hatch if Milestone 5 live testing proves narrow
+# insufficient). See SPEC.md section 9 and infra/modules/sre_agent.
+workload_access_level = "narrow"
+
+# Data-plane endpoint host under *.azuresre.ai. The real hostname includes
+# deployment-specific hash suffixes (e.g.
+# "sre-agent-demo--<hash>.<hash2>.swedencentral.azuresre.ai"), reported by
+# ARM's `properties.agentEndpoint` and surfaced by `labctl status`/`verify`;
+# it is not a simple "<agent-name>.<region>.azuresre.ai" pattern. Leave this
+# field blank; it is informational only and not read back from Terraform.
+data_plane_endpoint = ""
+
+[workload]
+# Non-secret settings for the PulseMart demo workload (see SPEC.md section 7).
+
+# Optional operator email for the checkout-failure action group. Leave blank
+# to keep the action group free of any operator-specific contact
+# information; the Azure Monitor alert still fires either way.
+alert_notification_email = ""
+
+# Minimum total HTTP 5xx checkout requests within the alert's 5-minute
+# window that fires the demo's Azure Monitor alert (see
+# infra/modules/alerting).
+alert_threshold_5xx = 3
+
+# Log Analytics workspace retention in days for the workload resource group.
+log_retention_days = 30
+
+[paths]
+# Local, git-ignored paths. Relative paths resolve against the repository root.
+terraform_state_dir = ".state"
+evidence_dir = ".evidence"

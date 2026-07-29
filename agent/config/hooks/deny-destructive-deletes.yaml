@@ -1,0 +1,42 @@
+metadata:
+  name: deny-destructive-deletes
+spec:
+  eventType: PreToolUse
+  hook:
+    type: prompt
+    prompt: >-
+      This action deletes, removes, or purges an Azure resource, revision,
+      or connector in the PulseMart demo environment. No incident scenario
+      in this demonstration requires deleting anything -- recovery is always
+      a traffic-weight change back to a known-good revision. Deny the
+      action. If the operator genuinely needs a resource removed, direct
+      them to `labctl destroy` instead.
+    # Live-verified 2026-07-29 (PLAN.md Milestone 5): matcher corrected from
+    # a hypothetical `^(delete_|remove_|purge_).*` tool-name pattern (which,
+    # like `require-approval-for-changes`'s original matcher, could never
+    # match this agent's real generic `RunAzCliWriteCommands` tool) to the
+    # real tool name, so the reasoning prompt above can actually inspect the
+    # pending command's content. However: the same round of live testing
+    # that proved `require-approval-for-changes` does not block a write
+    # applies here too -- this repository has NOT observed a real deletion
+    # attempt (deliberately; testing an actual delete against live demo
+    # resources is not a safe or reversible experiment) but has no positive
+    # evidence this hook would block one either, given `PreToolUse`
+    # hook-based blocking is now confirmed unreliable in this preview API
+    # build for the *identically shaped* approval hook. Do not rely on this
+    # hook alone: the actual guardrail against deletion is that
+    # `incident-investigator` is granted no tool broader than
+    # `RunAzCliReadCommands`, and `rollback-advisor` -- which as of the
+    # 2026-07-30 product-owner decision DOES hold `RunAzCliWriteCommands`
+    # (see `agent/config/subagents/rollback-advisor.yaml`) -- has its
+    # managed identity scoped to "Container Apps Contributor" on just the
+    # `ca-pulsemart-demo` Container App (see `infra/modules/sre_agent`'s
+    # `workload_access_level = "narrow"`), a role that does include
+    # `Microsoft.App/containerApps/delete` at the ARM level (see SPEC.md
+    # section 9) -- this hook and the RBAC scope are the only lines of
+    # defense against a delete, and neither is proven to reliably block.
+    # Treat as an open risk, not a closed one; see PLAN.md Milestone 5
+    # "Known risks".
+    matcher: ^RunAzCliWriteCommands$
+  permissionDecision: deny
+  enabled: true
