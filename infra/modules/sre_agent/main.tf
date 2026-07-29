@@ -275,25 +275,41 @@ resource "azurerm_role_assignment" "system_workload_container_apps_contributor" 
 # (Microsoft.AlertsManagement/alerts) are subscription-scoped resources, not
 # contained by any resource group, so a role assignment at the workload
 # resource group cannot grant permission on them -- Azure RBAC only inherits
-# downward through the ARM containment hierarchy. "Monitoring Contributor" at
-# the subscription is therefore the narrowest scope that actually works for
-# alert state changes (see SPEC.md section 9). The official Microsoft
-# template additionally grants the UAMI "Monitoring Reader" on the agent's
-# own resource group; matched here for parity.
+# downward through the ARM containment hierarchy. A deployment-unique custom
+# role grants only the two alert-instance actions the agent needs. Actions run
+# as the UAMI configured in properties.actionConfiguration.identity above, so
+# this subscription-scoped alert-lifecycle grant is intentionally not duplicated
+# to the system-assigned identity. The official Microsoft template additionally
+# grants the UAMI "Monitoring Reader" on the agent's own resource group; matched
+# here for parity.
 # --------------------------------------------------------------------------
 
-resource "azurerm_role_assignment" "uami_subscription_monitoring_contributor" {
-  scope                            = data.azurerm_subscription.current.id
-  role_definition_name             = "Monitoring Contributor"
-  principal_id                     = azurerm_user_assigned_identity.agent.principal_id
-  principal_type                   = "ServicePrincipal"
-  skip_service_principal_aad_check = true
+locals {
+  alert_lifecycle_role_name = "Azure SRE Agent Alert Lifecycle - ${var.name} - ${var.tags.deployment_id}"
 }
 
-resource "azurerm_role_assignment" "system_subscription_monitoring_contributor" {
+resource "azurerm_role_definition" "alert_lifecycle" {
+  name        = local.alert_lifecycle_role_name
+  scope       = data.azurerm_subscription.current.id
+  description = "Azure SRE Agent demo alert read/change-state only for ${var.name} (${var.tags.deployment_id})."
+
+  permissions {
+    actions = [
+      "Microsoft.AlertsManagement/alerts/read",
+      "Microsoft.AlertsManagement/alerts/changestate/action",
+    ]
+    not_actions = []
+  }
+
+  assignable_scopes = [
+    data.azurerm_subscription.current.id,
+  ]
+}
+
+resource "azurerm_role_assignment" "uami_subscription_alert_lifecycle" {
   scope                            = data.azurerm_subscription.current.id
-  role_definition_name             = "Monitoring Contributor"
-  principal_id                     = azapi_resource.agent.identity[0].principal_id
+  role_definition_id               = azurerm_role_definition.alert_lifecycle.role_definition_resource_id
+  principal_id                     = azurerm_user_assigned_identity.agent.principal_id
   principal_type                   = "ServicePrincipal"
   skip_service_principal_aad_check = true
 }

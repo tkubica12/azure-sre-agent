@@ -158,3 +158,45 @@ def test_run_evidence_collect_requires_workload_context(monkeypatch, tmp_path) -
     result = evidence_mod.run_evidence_collect(make_config(tmp_path), echo=lambda _m: None)
 
     assert result.exit_code == 1
+
+
+def test_run_evidence_collect_skips_invalid_thread_id(monkeypatch, tmp_path) -> None:
+    _patch_common(monkeypatch, tmp_path)
+    monkeypatch.setattr(evidence_mod, "list_scenario_slugs", lambda config: ["bad-deployment"])
+    monkeypatch.setattr(
+        evidence_mod,
+        "load_scenario_definition",
+        lambda config, slug: type(
+            "Scenario",
+            (),
+            {"incident": type("Incident", (), {"title_contains": "Checkout failures"})()},
+        )(),
+    )
+    monkeypatch.setattr(
+        evidence_mod.agent_dataplane,
+        "get_data_plane_token",
+        lambda **_kw: ("token", make_result(stdout="token")),
+    )
+    monkeypatch.setattr(
+        evidence_mod.agent_dataplane,
+        "list_threads",
+        lambda *a, **k: (
+            [{"id": "..\\escape", "title": "Checkout failures detected"}],
+            make_result(stdout="[]"),
+        ),
+    )
+    get_messages_calls: list[object] = []
+    monkeypatch.setattr(
+        evidence_mod.agent_dataplane,
+        "get_thread_messages",
+        lambda *a, **k: get_messages_calls.append(a) or ([], make_result(stdout="[]")),
+    )
+    messages: list[str] = []
+
+    result = evidence_mod.run_evidence_collect(make_config(tmp_path), echo=messages.append)
+
+    assert result.exit_code == 0
+    assert result.output_dir is not None
+    assert not get_messages_calls
+    assert not list(result.output_dir.glob("agent-thread-*messages.json"))
+    assert any("invalid id" in m for m in messages)

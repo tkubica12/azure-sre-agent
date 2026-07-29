@@ -484,6 +484,130 @@ def test_check_agent_workload_rbac_pass_broad(
     assert result.status == Status.PASS
 
 
+def test_check_agent_alert_lifecycle_rbac_pass_custom_role(
+    monkeypatch: pytest.MonkeyPatch, result_factory, tmp_path
+) -> None:
+    from conftest import make_config
+
+    config = make_config(tmp_path)
+    expected_role = "Azure SRE Agent Alert Lifecycle - sre-agent-demo - local"
+
+    def fake_role_assignments(object_id: str, scope: str, **_kw: object):
+        if scope.endswith("/resourceGroups/rg-agent"):
+            return (["Monitoring Reader"], result_factory(stdout="[]"))
+        if object_id == "uami-principal":
+            return ([expected_role], result_factory(stdout="[]"))
+        return ([], result_factory(stdout="[]"))
+
+    monkeypatch.setattr(verify.azure_cli, "role_assignments", fake_role_assignments)
+    monkeypatch.setattr(
+        verify.azure_cli,
+        "role_definition_by_name",
+        lambda name, **_kw: (
+            {
+                "roleName": name,
+                "permissions": [
+                    {
+                        "actions": [
+                            "Microsoft.AlertsManagement/alerts/read",
+                            "Microsoft.AlertsManagement/alerts/changestate/action",
+                        ]
+                    }
+                ],
+            },
+            result_factory(stdout="[]"),
+        ),
+    )
+
+    result = verify.check_agent_alert_lifecycle_rbac(config, _agent_context())
+
+    assert result.status == Status.PASS
+    assert "exactly alert read/change-state actions" in result.detail
+
+
+def test_check_agent_alert_lifecycle_rbac_fails_on_monitoring_contributor(
+    monkeypatch: pytest.MonkeyPatch, result_factory, tmp_path
+) -> None:
+    from conftest import make_config
+
+    config = make_config(tmp_path)
+    expected_role = "Azure SRE Agent Alert Lifecycle - sre-agent-demo - local"
+
+    def fake_role_assignments(object_id: str, scope: str, **_kw: object):
+        if scope.endswith("/resourceGroups/rg-agent"):
+            return (["Monitoring Reader"], result_factory(stdout="[]"))
+        if object_id == "uami-principal":
+            return ([expected_role, "Monitoring Contributor"], result_factory(stdout="[]"))
+        return (["Monitoring Contributor"], result_factory(stdout="[]"))
+
+    monkeypatch.setattr(verify.azure_cli, "role_assignments", fake_role_assignments)
+    monkeypatch.setattr(
+        verify.azure_cli,
+        "role_definition_by_name",
+        lambda name, **_kw: (
+            {
+                "roleName": name,
+                "permissions": [
+                    {
+                        "actions": [
+                            "Microsoft.AlertsManagement/alerts/read",
+                            "Microsoft.AlertsManagement/alerts/changestate/action",
+                        ]
+                    }
+                ],
+            },
+            result_factory(stdout="[]"),
+        ),
+    )
+
+    result = verify.check_agent_alert_lifecycle_rbac(config, _agent_context())
+
+    assert result.status == Status.FAIL
+    assert "forbidden Monitoring Contributor" in result.detail
+
+
+def test_check_agent_alert_lifecycle_rbac_fails_on_broader_custom_role_actions(
+    monkeypatch: pytest.MonkeyPatch, result_factory, tmp_path
+) -> None:
+    from conftest import make_config
+
+    config = make_config(tmp_path)
+    expected_role = "Azure SRE Agent Alert Lifecycle - sre-agent-demo - local"
+
+    def fake_role_assignments(object_id: str, scope: str, **_kw: object):
+        if scope.endswith("/resourceGroups/rg-agent"):
+            return (["Monitoring Reader"], result_factory(stdout="[]"))
+        if object_id == "uami-principal":
+            return ([expected_role], result_factory(stdout="[]"))
+        return ([], result_factory(stdout="[]"))
+
+    monkeypatch.setattr(verify.azure_cli, "role_assignments", fake_role_assignments)
+    monkeypatch.setattr(
+        verify.azure_cli,
+        "role_definition_by_name",
+        lambda name, **_kw: (
+            {
+                "roleName": name,
+                "permissions": [
+                    {
+                        "actions": [
+                            "Microsoft.AlertsManagement/alerts/read",
+                            "Microsoft.AlertsManagement/alerts/changestate/action",
+                            "Microsoft.Insights/DiagnosticSettings/delete",
+                        ]
+                    }
+                ],
+            },
+            result_factory(stdout="[]"),
+        ),
+    )
+
+    result = verify.check_agent_alert_lifecycle_rbac(config, _agent_context())
+
+    assert result.status == Status.FAIL
+    assert "DiagnosticSettings" in result.detail
+
+
 def test_check_agent_admin_rbac_pass(monkeypatch: pytest.MonkeyPatch, result_factory) -> None:
     # UAMI must NOT hold "SRE Agent Administrator" (self-approval risk, see
     # PLAN.md Milestone 5); the deployer must hold it.

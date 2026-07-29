@@ -53,6 +53,8 @@ from labctl.deploy import PLAN_FILENAME
 from labctl.state import DEPLOYMENT_STATE_FILENAME
 
 Echo = Callable[[str], None]
+UnrecognizedResourceGroupConfirmation = Callable[[str], bool]
+_TERRAFORM_STATE_FILENAME = "demo.tfstate"
 
 #: Deployment IDs that indicate the operator never customized
 #: `config.local.toml` and so cannot prove exclusive ownership of anything
@@ -87,6 +89,12 @@ class DestroyResult:
     exit_code: int
 
 
+@dataclass(frozen=True, slots=True)
+class ResourceGroupIdCheck:
+    ok: bool
+    checked: bool
+
+
 def _expected_tags(config: Config) -> dict[str, str]:
     return {
         "repository": config.tags.repository,
@@ -96,14 +104,23 @@ def _expected_tags(config: Config) -> dict[str, str]:
     }
 
 
-def _reject_placeholder_deployment_id(config: Config, echo: Echo) -> bool:
-    deployment_id = config.tags.deployment_id.strip().lower()
-    if deployment_id in _PLACEHOLDER_DEPLOYMENT_IDS:
+def _reject_placeholder_ownership_tags(config: Config, echo: Echo) -> bool:
+    checked = {
+        "tags.owner": config.tags.owner,
+        "tags.deployment_id": config.tags.deployment_id,
+    }
+    placeholders = [
+        (name, value)
+        for name, value in checked.items()
+        if value.strip().lower() in _PLACEHOLDER_DEPLOYMENT_IDS
+    ]
+    if placeholders:
+        details = ", ".join(f"{name}={value!r}" for name, value in placeholders)
         echo(
-            f"error: tags.deployment_id={config.tags.deployment_id!r} in config.local.toml looks "
-            "like a placeholder that was never customized. Refusing to destroy: a placeholder "
-            "value cannot prove exclusive ownership of anything. Set a real deployment_id and "
-            "re-run `labctl deploy --yes` before destroying (see AGENTS.md)."
+            f"error: {details} in config.local.toml looks like a placeholder that was never "
+            "customized. Refusing to destroy: placeholder ownership values cannot prove "
+            "exclusive ownership of anything. Set real ownership tags and re-run "
+            "`labctl deploy --yes` before destroying (see AGENTS.md)."
         )
         return False
     return True
@@ -148,7 +165,11 @@ def _check_resource_group_tags(config: Config, echo: Echo) -> bool:
     return ok
 
 
-def _check_resource_group_ids(config: Config, echo: Echo) -> bool:
+def _terraform_state_exists(config: Config) -> bool:
+    return (config.terraform_state_path() / _TERRAFORM_STATE_FILENAME).is_file()
+
+
+def _check_resource_group_ids(config: Config, echo: Echo) -> ResourceGroupIdCheck:
     """Verify the exact resource-group IDs Azure reports match Terraform's
     own state (via the root `agent_resource_group_id`/
     `workload_resource_group_id` outputs), not just resource names. A
@@ -157,12 +178,19 @@ def _check_resource_group_ids(config: Config, echo: Echo) -> bool:
 
     rg_ids, result = ctx.load_resource_group_ids(config)
     if rg_ids is None:
+        if _terraform_state_exists(config):
+            echo(
+                "  could not read agent_resource_group_id/workload_resource_group_id from "
+                "existing Terraform state outputs "
+                f"({result.diagnostic() if result is not None else 'missing outputs'}). "
+                "Refusing to destroy because exact resource-group IDs could not be verified."
+            )
+            return ResourceGroupIdCheck(ok=False, checked=True)
         echo(
-            "  could not read agent_resource_group_id/workload_resource_group_id from Terraform "
-            f"outputs ({result.diagnostic() if result is not None else 'no Terraform state'}); "
-            "nothing to verify IDs against (if resource groups do not exist, this is expected)."
+            "  no Terraform state file found; skipping exact resource-group ID check because "
+            "there is no Terraform-owned deployment state to compare against."
         )
-        return True
+        return ResourceGroupIdCheck(ok=True, checked=False)
 
     ok = True
     for rg_name, expected_id in (
@@ -182,7 +210,7 @@ def _check_resource_group_ids(config: Config, echo: Echo) -> bool:
             ok = False
         else:
             echo(f"  {rg_name}: ARM resource ID matches Terraform state ({actual_id}).")
-    return ok
+    return ResourceGroupIdCheck(ok=ok, checked=True)
 
 
 def _is_recognized_child(resource: ResourceSummary, owned_id_prefixes: list[str]) -> bool:
@@ -229,7 +257,13 @@ def _is_recognized_platform_companion(
     return any(name == f"Failure Anomalies - {ai_name}" for ai_name in owned_app_insights_names)
 
 
-def _check_resource_group_contents(config: Config, echo: Echo, *, allow_unrecognized: bool) -> bool:
+def _check_resource_group_contents(
+    config: Config,
+    echo: Echo,
+    *,
+    allow_unrecognized: bool,
+    confirm_unrecognized_resource_group: UnrecognizedResourceGroupConfirmation | None = None,
+) -> bool:
     """Enumerate every resource directly inside each owned resource group
     and refuse to proceed if any resource is neither tagged as owned, a
     recognized child of one that is, nor a recognized Azure platform
@@ -268,6 +302,16 @@ def _check_resource_group_contents(config: Config, echo: Echo, *, allow_unrecogn
             for r in unrecognized:
                 echo(f"    UNRECOGNIZED: {r.id} (type={r.type}, tags={r.tags or {}})")
             if allow_unrecognized:
+                if confirm_unrecognized_resource_group is None or not (
+                    confirm_unrecognized_resource_group(rg_name)
+                ):
+                    echo(
+                        "  refusing to destroy: --allow-unrecognized-resources requires typing "
+                        f"the affected resource-group name ({rg_name}) after reviewing the "
+                        "unrecognized resources, even when --yes is present."
+                    )
+                    ok = False
+                    continue
                 echo(
                     "  --allow-unrecognized-resources set: proceeding despite the resource(s) "
                     "above. This is an explicit operator override; verify manually that they "
@@ -277,8 +321,7 @@ def _check_resource_group_contents(config: Config, echo: Echo, *, allow_unrecogn
                 echo(
                     "  refusing to destroy: the resource(s) above do not carry this "
                     "deployment's ownership tags and are not recognized children of one that "
-                    "does. Investigate manually, or pass --allow-unrecognized-resources to "
-                    "`labctl destroy` once you have confirmed they are safe to remove."
+                    "does. Investigate manually before retrying."
                 )
                 ok = False
         del group_result
@@ -291,6 +334,7 @@ def run_destroy(
     yes: bool,
     plan_only: bool = False,
     allow_unrecognized_resources: bool = False,
+    confirm_unrecognized_resource_group: UnrecognizedResourceGroupConfirmation | None = None,
     echo: Echo = print,
 ) -> DestroyResult:
     tf_cwd = ctx.terraform_cwd(config)
@@ -300,25 +344,37 @@ def run_destroy(
         echo(f"error: {fatal_message}")
         return DestroyResult(2)
 
-    echo("Checking ownership before any destructive operation:")
-    if not _reject_placeholder_deployment_id(config, echo):
-        return DestroyResult(2)
+    init_result = terraform_cli.init_backend(tf_cwd)
+    if not init_result.ok:
+        echo(f"error: terraform init failed: {init_result.diagnostic()}")
+        echo(init_result.redacted_stderr())
+        return DestroyResult(1)
 
+    echo("Checking ownership before any destructive operation:")
+    if not _reject_placeholder_ownership_tags(config, echo):
+        return DestroyResult(2)
     tags_ok = _check_resource_group_tags(config, echo)
-    ids_ok = _check_resource_group_ids(config, echo)
+    id_check = _check_resource_group_ids(config, echo)
     contents_ok = _check_resource_group_contents(
-        config, echo, allow_unrecognized=allow_unrecognized_resources
+        config,
+        echo,
+        allow_unrecognized=allow_unrecognized_resources,
+        confirm_unrecognized_resource_group=confirm_unrecognized_resource_group,
     )
-    if not (tags_ok and ids_ok and contents_ok):
+    if not (tags_ok and id_check.ok and contents_ok):
         echo(
             "error: refusing to destroy; ownership could not be fully verified. See the "
             "messages above and investigate manually before retrying."
         )
         return DestroyResult(2)
-    echo(
-        "Ownership verified: all four tags, exact resource-group IDs, and every enumerated "
-        "child resource are accounted for."
-    )
+    verified = ["ownership tags", "child-resource inventory"]
+    if id_check.checked:
+        verified.append("exact resource-group IDs")
+    skipped = [] if id_check.checked else ["exact resource-group IDs (no Terraform state file)"]
+    message = f"Ownership checks passed: {', '.join(verified)}."
+    if skipped:
+        message += f" Skipped: {', '.join(skipped)}."
+    echo(message)
 
     agent_context, _agent_result = ctx.load_agent_context(config)
     if agent_context is not None:
@@ -329,12 +385,6 @@ def run_destroy(
         )
 
     tfvars_path = tfvars.write_tfvars(config)
-
-    init_result = terraform_cli.init_backend(tf_cwd)
-    if not init_result.ok:
-        echo(f"error: terraform init failed: {init_result.diagnostic()}")
-        echo(init_result.redacted_stderr())
-        return DestroyResult(1)
 
     plan_path = config.terraform_state_path() / f"destroy-{PLAN_FILENAME}"
     plan_result = terraform_cli.plan(tf_cwd, var_file=tfvars_path, out_file=plan_path, destroy=True)
@@ -357,7 +407,7 @@ def run_destroy(
         return DestroyResult(2)
 
     echo("Destroying Terraform-owned resources...")
-    destroy_result = terraform_cli.destroy(tf_cwd, var_file=tfvars_path)
+    destroy_result = terraform_cli.apply(tf_cwd, plan_file=plan_path)
     if not destroy_result.ok:
         remaining = terraform_cli.state_list(tf_cwd)
         echo(f"error: terraform destroy failed: {destroy_result.diagnostic()}")

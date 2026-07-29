@@ -674,9 +674,11 @@
             <code>rollback-advisor</code> is the <strong>only</strong>
             subagent in <code>agent/</code> that holds
             <code>RunAzCliWriteCommands</code>, and its managed identity's
-            only write-capable RBAC grant is "Container Apps Contributor"
+            only workload write-capable RBAC grant is "Container Apps Contributor"
             scoped to just the <code>ca-pulsemart-demo</code> resource, not
-            Contributor over the resource group. This built-in role's entire
+            Contributor over the resource group. The same action UAMI also has
+            a subscription-scoped custom alert-lifecycle role with only alert
+            read and change-state actions. This built-in role's entire
             action set is <code>Microsoft.App/*</code> and
             <code>Microsoft.Insights/alertRules/*</code> - there is no
             <code>Microsoft.Resources/*</code> action anywhere in it, so a
@@ -1094,8 +1096,8 @@
         <tbody>
           <tr><td>Agent identities</td><td>Workload resource group</td><td>Reader, Log Analytics Reader</td></tr>
           <tr><td>Agent identities</td><td><code>ca-pulsemart-demo</code> only</td><td>Container Apps Contributor</td></tr>
-          <tr><td>Agent identities</td><td>Subscription</td><td>Monitoring Contributor - monitoring-plane write access, required because Azure Monitor alert instances (<code>Microsoft.AlertsManagement/alerts</code>) are subscription-scoped resources with no containing resource group, so no resource-group-scoped role can reach alert-lifecycle operations at all. This is not subscription-wide Contributor and grants nothing outside <code>Microsoft.Insights</code>/<code>Microsoft.AlertsManagement</code>.</td></tr>
-          <tr><td>Agent identities</td><td>Agent resource group</td><td>Monitoring Reader</td></tr>
+          <tr><td>Agent UAMI</td><td>Subscription</td><td>Deployment-unique custom alert-lifecycle role with exactly <code>Microsoft.AlertsManagement/alerts/read</code> and <code>Microsoft.AlertsManagement/alerts/changestate/action</code>. Azure Monitor alert instances are subscription-scoped resources with no containing resource group, so no resource-group-scoped role can reach alert-lifecycle operations.</td></tr>
+          <tr><td>Agent UAMI</td><td>Agent resource group</td><td>Monitoring Reader</td></tr>
         </tbody>
       </table>
       <p>Live-verified present on every rehearsal by
@@ -1159,8 +1161,10 @@
         relies on are <strong>tool scoping and narrow RBAC</strong>:
         <code>incident-investigator</code> has no Azure-write tool at all;
         <code>rollback-advisor</code> is the only subagent that does, and its
-        identity's only write-capable role is scoped to one Container App
-        resource whose action set cannot reach any other resource type. The
+        identity's only workload write-capable role is scoped to one Container
+        App resource whose action set cannot reach any other resource type; its
+        separate subscription-scoped alert role can only read and change alert
+        instance state. The
         hooks above remain configured as documented intent, not as a settled
         operative control, and will start working automatically if Microsoft
         fixes the underlying platform defect.</p>
@@ -1314,8 +1318,10 @@
         confirms nothing owned remains and exits 0. If any unrecognized
         resource is found inside an owned resource group, destroy stops and
         prints it for review rather than deleting it blindly - only pass
-        <code>--allow-unrecognized-resources</code> after you have read
-        that list yourself.</p>
+        <code>--allow-unrecognized-resources</code> only after you have read
+        that list yourself. When that override is used, <code>labctl</code>
+        still requires typing the affected resource-group name, even if
+        <code>--yes</code> is present.</p>
     </section>
 
     <!-- ================= REFERENCE: ADOPTION ================= -->

@@ -172,16 +172,18 @@ The real, verified safety gate is **tool-scoping**, not a Review-mode click:
   holds no `RunAzCliWriteCommands` tool at all and is structurally
   incapable of mutating anything -- it can only investigate and hand off.
 - `rollback-advisor` is the only subagent in `agent/` that holds
-  `RunAzCliWriteCommands`, and its managed identity's only write-capable
-  RBAC grant is "Container Apps Contributor" scoped to just the
-  `ca-pulsemart-demo` Container App resource, not Contributor over the
-  resource group (`infra/modules/sre_agent`'s `workload_access_level =
-  "narrow"`). A write attempted against any other resource in
-  `rg-sre-agent-workload-demo` -- the Log Analytics workspace, the
-  container registry, the alert rule, or anything else -- fails with
-  `AuthorizationFailed` at the ARM level regardless of what the model
-  decides to try. See PLAN.md Milestone 5 for a live-captured example of
-  this constraint actually firing.
+  `RunAzCliWriteCommands`. Its managed identity has one workload write grant:
+  "Container Apps Contributor" scoped to just the `ca-pulsemart-demo`
+  Container App resource, not Contributor over the resource group
+  (`infra/modules/sre_agent`'s `workload_access_level = "narrow"`). The same
+  UAMI also has a subscription-scoped custom alert-lifecycle role with only
+  `Microsoft.AlertsManagement/alerts/read` and
+  `Microsoft.AlertsManagement/alerts/changestate/action`. A write attempted
+  against any other resource in `rg-sre-agent-workload-demo` -- the Log
+  Analytics workspace, the container registry, the alert rule, or anything
+  else -- fails with `AuthorizationFailed` at the ARM level regardless of what
+  the model decides to try. See PLAN.md Milestone 5 for a live-captured example
+  of this constraint actually firing.
 
 The `require-approval-for-changes` and `deny-destructive-deletes` pre-tool
 hooks remain configured as documented intent (and so they would engage
@@ -392,8 +394,7 @@ see `infra/modules/sre_agent`):
 | Agent system identity | Workload RG | Reader |
 | Agent system identity | Workload RG | Log Analytics Reader |
 | Agent system identity | Container App | Container Apps Contributor |
-| Agent UAMI | Subscription | Monitoring Contributor |
-| Agent system identity | Subscription | Monitoring Contributor |
+| Agent UAMI | Subscription | Custom role: Azure SRE Agent Alert Lifecycle - `<agent-name>` - `<deployment-id>` |
 | Agent UAMI | Agent RG | Monitoring Reader |
 | Deployer | SRE Agent resource | SRE Agent Administrator |
 | Container App identity | ACR | AcrPull |
@@ -410,14 +411,21 @@ Azure Monitor alert instances (`Microsoft.AlertsManagement/alerts`) are
 subscription-scoped resources with no containing resource group, so a role
 assignment at the workload resource group cannot grant permission to
 acknowledge or close them -- Azure RBAC only inherits downward through the ARM
-containment hierarchy. "Monitoring Contributor" at the subscription is
-therefore the narrowest scope that actually works for alert lifecycle
-operations; it is not subscription-wide Contributor and grants no write access
-outside `Microsoft.Insights`/`Microsoft.AlertsManagement`. The official
-Microsoft template additionally grants the UAMI "Monitoring Reader" on the
-agent's own resource group; matched here for parity. Both grants are
-live-verified present with `az role assignment list --scope
-/subscriptions/<id>` / `--scope <agent-rg-id>`.
+containment hierarchy. The demo therefore defines a deployment-unique custom
+role at subscription scope and assigns it only to the UAMI used by
+`actionConfiguration.identity`. That custom role grants exactly:
+
+- `Microsoft.AlertsManagement/alerts/read`
+- `Microsoft.AlertsManagement/alerts/changestate/action`
+
+It does not grant `Monitoring Contributor`, Log Analytics shared-key access,
+diagnostic-settings writes, or Application Insights component writes/deletes.
+The system-assigned identity does not receive a duplicate subscription-scoped
+alert-lifecycle grant. The official Microsoft template additionally grants the
+UAMI "Monitoring Reader" on the agent's own resource group; matched here for
+parity. These grants are live-verified by `labctl verify`'s
+`agent-rbac-alert-lifecycle` check, including that `Monitoring Contributor` is
+absent from both agent identities.
 
 `workload_access_level = "broad"` is kept as a configurable escape hatch:
 Contributor across the whole workload resource group, matching what this

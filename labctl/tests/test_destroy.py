@@ -53,6 +53,7 @@ def _patch_common(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         destroy_mod.ctx, "load_resource_group_ids", lambda config, **_kw: (None, None)
     )
+    monkeypatch.setattr(destroy_mod.terraform_cli, "init_backend", lambda cwd: make_result())
 
 
 def _patch_terraform_success(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -62,7 +63,7 @@ def _patch_terraform_success(monkeypatch: pytest.MonkeyPatch) -> None:
         "plan",
         lambda cwd, **kw: make_result(stdout="Plan: 0 to add, 0 to change, 12 to destroy."),
     )
-    monkeypatch.setattr(destroy_mod.terraform_cli, "destroy", lambda cwd, **kw: make_result())
+    monkeypatch.setattr(destroy_mod.terraform_cli, "apply", lambda cwd, **kw: make_result())
     monkeypatch.setattr(destroy_mod.terraform_cli, "state_list", lambda cwd: make_result(stdout=""))
     monkeypatch.setattr(destroy_mod.ctx, "load_agent_context", lambda config, **_kw: (None, None))
 
@@ -106,6 +107,27 @@ def test_destroy_refuses_on_placeholder_deployment_id(
     assert any("placeholder" in m for m in messages)
 
 
+def test_destroy_refuses_on_placeholder_owner(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    from labctl.config import TagsConfig
+
+    _patch_common(monkeypatch)
+    config = make_config(
+        tmp_path,
+        tags=TagsConfig(
+            repository="azure-sre-agent",
+            environment="demo",
+            owner="change-me",
+            deployment_id="local",
+        ),
+    )
+    messages: list[str] = []
+
+    result = destroy_mod.run_destroy(config, yes=True, echo=messages.append)
+
+    assert result.exit_code == 2
+    assert any("tags.owner" in m and "placeholder" in m for m in messages)
+
+
 def test_destroy_refuses_on_ownership_mismatch(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     _patch_common(monkeypatch)
     monkeypatch.setattr(
@@ -147,6 +169,26 @@ def test_destroy_refuses_when_resource_group_id_does_not_match_terraform_state(
 
     assert result.exit_code == 2
     assert any("does not match Terraform state" in m for m in messages)
+
+
+def test_destroy_refuses_when_existing_terraform_state_outputs_cannot_be_read(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    _patch_common(monkeypatch)
+    config = make_config(tmp_path)
+    config.terraform_state_path().mkdir(parents=True)
+    (config.terraform_state_path() / "demo.tfstate").write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(
+        destroy_mod.ctx,
+        "load_resource_group_ids",
+        lambda config, **_kw: (None, make_result(returncode=1, stderr="output failed")),
+    )
+    messages: list[str] = []
+
+    result = destroy_mod.run_destroy(config, yes=True, echo=messages.append)
+
+    assert result.exit_code == 2
+    assert any("existing Terraform state outputs" in m for m in messages)
 
 
 def test_destroy_refuses_on_unrecognized_child_resource(
@@ -197,13 +239,17 @@ def test_destroy_allow_unrecognized_resources_override_proceeds(
         destroy_mod,
         "resource_list",
         lambda name, **_kw: (
-            [
-                ResourceSummary(
-                    id="/subscriptions/sub-1/resourceGroups/rg-agent/providers/x/y",
-                    type="x/y",
-                    tags={},
-                )
-            ],
+            (
+                [
+                    ResourceSummary(
+                        id="/subscriptions/sub-1/resourceGroups/rg-agent/providers/x/y",
+                        type="x/y",
+                        tags={},
+                    )
+                ]
+                if name == "rg-agent"
+                else []
+            ),
             make_result(),
         ),
     )
@@ -214,11 +260,55 @@ def test_destroy_allow_unrecognized_resources_override_proceeds(
         yes=True,
         plan_only=True,
         allow_unrecognized_resources=True,
+        confirm_unrecognized_resource_group=lambda name: name == "rg-agent",
         echo=messages.append,
     )
 
     assert result.exit_code == 0
     assert any("explicit operator override" in m for m in messages)
+
+
+def test_destroy_allow_unrecognized_resources_requires_typed_resource_group(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    _patch_common(monkeypatch)
+    _patch_terraform_success(monkeypatch)
+    monkeypatch.setattr(
+        destroy_mod,
+        "resource_group_show",
+        lambda name, **_kw: (RG_JSON_MATCHING_OWNER, make_result()),
+    )
+    monkeypatch.setattr(
+        destroy_mod,
+        "resource_list",
+        lambda name, **_kw: (
+            (
+                [
+                    ResourceSummary(
+                        id="/subscriptions/sub-1/resourceGroups/rg-agent/providers/x/y",
+                        type="x/y",
+                        tags={},
+                    )
+                ]
+                if name == "rg-agent"
+                else []
+            ),
+            make_result(),
+        ),
+    )
+    messages: list[str] = []
+
+    result = destroy_mod.run_destroy(
+        make_config(tmp_path),
+        yes=True,
+        plan_only=True,
+        allow_unrecognized_resources=True,
+        confirm_unrecognized_resource_group=lambda name: False,
+        echo=messages.append,
+    )
+
+    assert result.exit_code == 2
+    assert any("requires typing" in m for m in messages)
 
 
 def test_destroy_recognizes_child_resources_of_owned_resources(
@@ -349,29 +439,29 @@ def test_destroy_refuses_unrelated_smart_detector_alert_for_unowned_app_insights
 def test_destroy_requires_yes_to_apply(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     _patch_common(monkeypatch)
     _patch_terraform_success(monkeypatch)
-    destroy_calls: list[object] = []
+    apply_calls: list[object] = []
     monkeypatch.setattr(
         destroy_mod.terraform_cli,
-        "destroy",
-        lambda cwd, **kw: destroy_calls.append(1) or make_result(),
+        "apply",
+        lambda cwd, **kw: apply_calls.append(kw) or make_result(),
     )
     messages: list[str] = []
 
     result = destroy_mod.run_destroy(make_config(tmp_path), yes=False, echo=messages.append)
 
     assert result.exit_code == 2
-    assert not destroy_calls
+    assert not apply_calls
     assert any("--yes" in m for m in messages)
 
 
 def test_destroy_plan_only_never_destroys(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     _patch_common(monkeypatch)
     _patch_terraform_success(monkeypatch)
-    destroy_calls: list[object] = []
+    apply_calls: list[object] = []
     monkeypatch.setattr(
         destroy_mod.terraform_cli,
-        "destroy",
-        lambda cwd, **kw: destroy_calls.append(1) or make_result(),
+        "apply",
+        lambda cwd, **kw: apply_calls.append(kw) or make_result(),
     )
     messages: list[str] = []
 
@@ -380,7 +470,26 @@ def test_destroy_plan_only_never_destroys(monkeypatch: pytest.MonkeyPatch, tmp_p
     )
 
     assert result.exit_code == 0
-    assert not destroy_calls
+    assert not apply_calls
+
+
+def test_destroy_applies_the_reviewed_saved_plan(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    _patch_common(monkeypatch)
+    _patch_terraform_success(monkeypatch)
+    config = make_config(tmp_path)
+    apply_kwargs: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        destroy_mod.terraform_cli,
+        "apply",
+        lambda cwd, **kw: apply_kwargs.append(kw) or make_result(),
+    )
+
+    result = destroy_mod.run_destroy(config, yes=True, echo=lambda _m: None)
+
+    assert result.exit_code == 0
+    assert apply_kwargs == [{"plan_file": config.terraform_state_path() / "destroy-demo.tfplan"}]
 
 
 def test_destroy_succeeds_and_cleans_up_local_state(
@@ -413,7 +522,7 @@ def test_destroy_reports_failure_and_remaining_state(
     )
     monkeypatch.setattr(
         destroy_mod.terraform_cli,
-        "destroy",
+        "apply",
         lambda cwd, **kw: make_result(returncode=1, stderr="deletion conflict"),
     )
     monkeypatch.setattr(

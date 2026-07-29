@@ -22,9 +22,9 @@ spec:
     # not reality. If Microsoft ever fixes the persistence defect described
     # below, this hook would then engage for `rollback-advisor`'s real write
     # tool without any repository change; until then, tool-scoping (only
-    # `rollback-advisor` holds `RunAzCliWriteCommands`) and the narrow
-    # "Container Apps Contributor" RBAC scope are the demo's actual,
-    # live-proven controls.
+    # `rollback-advisor` holds `RunAzCliWriteCommands`) and narrow RBAC
+    # (Container Apps Contributor on one Container App plus a custom alert
+    # read/change-state role) are the demo's actual, live-proven controls.
     #
     # Live-verified 2026-07-29 (PLAN.md Milestone 5): this agent's actual
     # write tool is the generic `RunAzCliWriteCommands` (there is no
@@ -63,8 +63,8 @@ spec:
     # mitigation itself, under its own identity, in Autonomous mode; the
     # demo's actual governance controls are tool-scoping (only
     # `rollback-advisor` can write, and only for Container App revision/
-    # traffic operations) and the narrow "Container Apps Contributor" RBAC
-    # scope, not this hook. See SPEC.md section 5 Scene 5 and PLAN.md
+    # traffic operations plus alert state changes) and narrow RBAC, not this
+    # hook. See SPEC.md section 5 Scene 5 and PLAN.md
     # Milestone 5 for the full evidence trail.
     matcher: ^RunAzCliWriteCommands$
   permissionDecision: allow

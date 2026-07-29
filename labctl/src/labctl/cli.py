@@ -218,11 +218,26 @@ def evidence_collect() -> None:
 def destroy(yes: bool, plan_only: bool, allow_unrecognized_resources: bool) -> None:
     """Confirm ownership, destroy Terraform resources, and report retained resources."""
     config = _load_config_or_exit()
+
+    def confirm_unrecognized_resource_group(expected_name: str) -> bool:
+        typed = str(
+            click.prompt(
+                "Unrecognized resources were found. Type the affected resource group name "
+                f"({expected_name}) to confirm the override",
+                default="",
+                show_default=False,
+            )
+        )
+        return typed == expected_name
+
     result = run_destroy(
         config,
         yes=yes,
         plan_only=plan_only,
         allow_unrecognized_resources=allow_unrecognized_resources,
+        confirm_unrecognized_resource_group=(
+            confirm_unrecognized_resource_group if allow_unrecognized_resources else None
+        ),
     )
     raise SystemExit(result.exit_code)
 

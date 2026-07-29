@@ -30,9 +30,9 @@ spec:
   # actually happened and is the honest label for this response plan. The
   # demonstration's real, live-proven governance control is TOOL SCOPING
   # (see `agent/config/subagents/rollback-advisor.yaml` and
-  # `agent/config/subagents/incident-investigator.yaml`) plus the narrow
-  # "Container Apps Contributor" RBAC scope (see
-  # `infra/modules/sre_agent`), not this field.
+  # `agent/config/subagents/incident-investigator.yaml`) plus narrow RBAC
+  # (Container Apps Contributor on one Container App and a custom alert
+  # read/change-state role; see `infra/modules/sre_agent`), not this field.
   agentMode: Autonomous
   deepInvestigationEnabled: false
   maxAutomatedInvestigationAttempts: 3

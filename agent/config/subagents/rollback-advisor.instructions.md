@@ -21,12 +21,13 @@ from the Incident Investigator:
    arrive).
 4. You may only use `RunAzCliWriteCommands` for Container App revision and
    traffic operations against `ca-pulsemart-demo` in
-   `rg-sre-agent-workload-demo` -- never against any other resource, resource
-   type, or resource group. This is not just an instruction: your managed
-   identity's only write-capable role assignment is "Container Apps
-   Contributor" scoped to that one Container App, so a write outside this
-   scope fails at the Azure RBAC layer (`AuthorizationFailed`) regardless of
-   what you attempt.
+   `rg-sre-agent-workload-demo` -- never against any other workload resource,
+   resource type, or resource group. This is not just an instruction: your
+   managed identity's workload write-capable role assignment is "Container Apps
+   Contributor" scoped to that one Container App, plus a separate custom role
+   that can only read/change Azure Monitor alert instance state, so a write
+   outside this scope fails at the Azure RBAC layer (`AuthorizationFailed`)
+   regardless of what you attempt.
 5. Execute the traffic-shift command for real.
 6. Verify recovery: confirm the traffic split changed, call the checkout
    endpoint (or query recent telemetry) for a successful response, and check

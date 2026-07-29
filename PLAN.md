@@ -99,11 +99,12 @@ realism.
 - [x] Apply the least-privilege workload-RG roles (`workload_access_level =
   "narrow"` by default: Reader + Log Analytics Reader at the resource group,
   Container Apps Contributor scoped to the Container App) to both agent
-  identities and the deployer, plus subscription-scope Monitoring Contributor
-  and agent-RG Monitoring Reader for alert lifecycle operations. A "broad"
-  Contributor-at-resource-group escape hatch remains available and
-  configurable if Milestone 5 live testing proves the narrow set
-  insufficient for a real remediation action.
+  identities, plus a deployment-unique subscription-scope custom alert
+  lifecycle role (only `Microsoft.AlertsManagement/alerts/read` and
+  `.../changestate/action`) and agent-RG Monitoring Reader for the UAMI. A
+  "broad" Contributor-at-resource-group escape hatch remains available and
+  configurable if live testing proves the narrow set insufficient for a real
+  remediation action.
 - [x] Expose safe portal and endpoint outputs.
 - [x] Implement agent readiness and connector checks.
 - [x] Validate the agent's monthly AAU allocation against a sensible
@@ -151,9 +152,10 @@ docs/adr/0001-incident-platform-reconciliation.md), so it survives every
 subsequent apply; workload RBAC
 defaults to Reader + Log Analytics Reader + Container Apps Contributor
 scoped to the Container App (`workload_access_level = "narrow"`, with
-`"broad"` kept as a configurable escape hatch); Monitoring Contributor
-(subscription scope) and Monitoring Reader (agent RG) are granted to satisfy
-alert acknowledge/close. See SPEC.md sections 9 and 11 for the corrected
+`"broad"` kept as a configurable escape hatch); the former subscription-scope
+Monitoring Contributor grant is replaced by a custom UAMI-only alert
+lifecycle role with exactly alert read/change-state actions, plus Monitoring
+Reader on the agent RG. See SPEC.md sections 9 and 11 for the corrected
 contract and the top-level task's final report for live evidence.
 
 **Critic:** Azure architecture and security reviewers assess API usage,
@@ -1076,10 +1078,11 @@ deliberately not committed per this run's constraints.
   console logs, which is the same tolerant pattern
   `labctl.verify.check_app_insights_telemetry`/`check_log_analytics_telemetry`
   already use (bounded retries, WARN not FAIL).
-- Live-verified 2026-07-29: the narrowed workload RBAC set (Reader + Log
-  Analytics Reader at the workload resource group, Container Apps
-  Contributor scoped to the Container App, Monitoring Contributor at
-  subscription scope, Monitoring Reader on the agent RG) is **sufficient**
+- Live-verified 2026-07-29 and re-verified after the 2026-07-29 alert-RBAC
+  hardening: the narrowed workload RBAC set (Reader + Log Analytics Reader at
+  the workload resource group, Container Apps Contributor scoped to the
+  Container App, UAMI-only custom alert lifecycle role at subscription scope,
+  Monitoring Reader on the agent RG) is **sufficient**
   for the agent to perform the real remediation. Across both live runs, the
   agent (via a Task-delegated `rollback-advisor`-equivalent execution, since
   `experimentalSettings.EnableV2AgentLoop`'s "workspace mode" rejects new
@@ -1238,7 +1241,7 @@ deliberately not committed per this run's constraints.
 | Terraform drift from scenario changes | Ignore scenario-owned app template and traffic fields in Terraform; let labctl record and restore the baseline |
 | `terraform apply`/`labctl deploy` silently resets agent data-plane-only ARM properties (`incidentManagementConfiguration`, live-confirmed 2026-07-29) | `labctl deploy` now calls `labctl provision` automatically (idempotent) as of Milestone 5; `labctl verify`'s `agent-incident-platform`/`agent-response-plans` checks catch a regression immediately either way |
 | Evidence bundles can capture live secrets from raw Azure CLI/agent-transcript output (live-verified 2026-07-29; see Milestone 5 findings above) | `labctl.evidence._redact_recursive` redacts every string leaf before any evidence file is written; re-verify with a fresh secret scan after any change to what `evidence collect` captures |
-| No live test has exercised an actual delete/destructive attempt against `deny-destructive-deletes` (deliberately -- an unreversible action is not a safe experiment against live demo resources), and the identically-shaped `require-approval-for-changes` hook is now confirmed unreliable, so this hook has no positive evidence of actually blocking anything either | `incident-investigator` is granted no tool broader than `RunAzCliReadCommands`; `rollback-advisor` (as of the 2026-07-30 product-owner decision) does hold `RunAzCliWriteCommands`, but its managed identity's only write-capable RBAC grant is "Container Apps Contributor" scoped to just the `ca-pulsemart-demo` Container App resource, not the resource group. That role's action list is entirely `Microsoft.App/*`/`Microsoft.Insights/alertRules/*` (live-confirmed via `az role definition list`, 2026-07-30) with no `Microsoft.Resources/*` action, so this identity structurally cannot delete the ACR, Log Analytics workspace, alert rule, or resource group regardless of what any subagent attempts -- deletion of the Container App itself remains technically possible at the RBAC layer (the role's `Microsoft.App/containerApps/*/delete` action) and is not proven blocked by any live test; treat as unresolved, not closed |
+| No live test has exercised an actual delete/destructive attempt against `deny-destructive-deletes` (deliberately -- an unreversible action is not a safe experiment against live demo resources), and the identically-shaped `require-approval-for-changes` hook is now confirmed unreliable, so this hook has no positive evidence of actually blocking anything either | `incident-investigator` is granted no tool broader than `RunAzCliReadCommands`; `rollback-advisor` (as of the 2026-07-30 product-owner decision) does hold `RunAzCliWriteCommands`, but its managed identity's workload write-capable RBAC grant is "Container Apps Contributor" scoped to just the `ca-pulsemart-demo` Container App resource, not the resource group. The UAMI's separate subscription custom alert role can only read and change `Microsoft.AlertsManagement/alerts` state. Container Apps Contributor has no `Microsoft.Resources/*` action, so this identity structurally cannot delete the ACR, Log Analytics workspace, metric alert rule, or resource group regardless of what any subagent attempts -- deletion of the Container App itself remains technically possible at the RBAC layer (the role's `Microsoft.App/containerApps/*/delete` action) and is not proven blocked by any live test; treat as unresolved, not closed |
 
 ## Progress tracking
 

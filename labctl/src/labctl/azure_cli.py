@@ -274,6 +274,26 @@ def role_assignments(
     return [str(role) for role in data], result
 
 
+def role_definition_by_name(
+    name: str,
+    *,
+    runner: AzRunner = run_az,
+) -> tuple[dict[str, Any] | None, CommandResult]:
+    """Return an Azure RBAC role definition by exact role name."""
+
+    result = runner(
+        ["role", "definition", "list", "--name", name, "--output", "json"],
+        retries=1,
+    )
+    data = _parse_json(result)
+    if not isinstance(data, list):
+        return None, result
+    for item in data:
+        if isinstance(item, dict) and str(item.get("roleName", "")) == name:
+            return item, result
+    return None, result
+
+
 def provider_show(
     namespace: str, *, runner: AzRunner = run_az
 ) -> tuple[dict[str, Any] | None, CommandResult]:
@@ -460,6 +480,7 @@ __all__ = [
     "is_not_found",
     "signed_in_object_id",
     "role_assignments",
+    "role_definition_by_name",
     "provider_show",
     "resource_group_show",
     "ResourceSummary",

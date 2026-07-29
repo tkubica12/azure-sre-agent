@@ -12,6 +12,7 @@ artifacts").
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -27,6 +28,7 @@ from labctl.scenario_definition import list_scenario_slugs, load_scenario_defini
 from labctl.state import load_deployment_state, load_scenario_state
 
 Echo = Callable[[str], None]
+_THREAD_ID_RE = re.compile(r"^[0-9a-fA-F-]{36}$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -223,6 +225,12 @@ def run_evidence_collect(config: Config, *, echo: Echo = print) -> EvidenceResul
                     for thread in matching:
                         thread_id = str(thread.get("id", ""))
                         if not thread_id:
+                            continue
+                        if _THREAD_ID_RE.fullmatch(thread_id) is None:
+                            echo(
+                                "  warning: skipping thread with invalid id; expected a "
+                                "36-character GUID-like value."
+                            )
                             continue
                         messages, messages_result = agent_dataplane.get_thread_messages(
                             agent_context.data_plane_endpoint, dp_token, thread_id

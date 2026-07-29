@@ -215,7 +215,11 @@ def _build_recovery_telemetry_query(proof_start: datetime, recovered_revision: s
 
 
 def _recovery_canary_request_count(config: Config) -> int:
-    return max(_RECOVERY_CANARY_MIN_REQUESTS, config.workload.alert_threshold_5xx, 1)
+    # Send more requests than the proof threshold because Application Insights
+    # ingestion can occasionally lag or drop one successful request from a tiny
+    # batch; verification still requires at least _RECOVERY_CANARY_MIN_REQUESTS
+    # observed rows below.
+    return max(_RECOVERY_CANARY_MIN_REQUESTS * 2, config.workload.alert_threshold_5xx, 1)
 
 
 def _post_checkout_recovery_canary(url: str, **_kwargs: object) -> HttpResult:

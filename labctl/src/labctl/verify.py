@@ -267,6 +267,13 @@ _EXPECTED_NARROW_APP_ROLE = "Container Apps Contributor"
 #: Write-capable role granted at resource-group scope under the "broad"
 #: access-level escape hatch (see SPEC.md section 9).
 _EXPECTED_BROAD_RG_ROLE = "Contributor"
+_EXPECTED_ALERT_LIFECYCLE_ACTIONS: frozenset[str] = frozenset(
+    {
+        "Microsoft.AlertsManagement/alerts/read",
+        "Microsoft.AlertsManagement/alerts/changestate/action",
+    }
+)
+_FORBIDDEN_SUBSCRIPTION_MONITORING_ROLE = "Monitoring Contributor"
 
 #: `experimentalSettings` flags Terraform sets on the agent resource (see
 #: infra/modules/sre_agent/main.tf); all must be `true`.
@@ -495,32 +502,119 @@ def check_agent_workload_rbac(
     )
 
 
-def check_agent_alert_lifecycle_rbac(agent_context: ctx.AgentContext) -> CheckResult:
-    """Verify both agent identities hold "Monitoring Contributor" at
-    subscription scope (required to acknowledge/close Azure Monitor alert
-    instances, which are subscription-scoped resources -- see SPEC.md
-    section 9 / M1) plus the UAMI holds "Monitoring Reader" on the agent's
-    own resource group, matching the official Microsoft template.
+def _alert_lifecycle_role_name(config: Config, agent_context: ctx.AgentContext) -> str:
+    return (
+        "Azure SRE Agent Alert Lifecycle - "
+        f"{agent_context.agent_name} - {config.tags.deployment_id}"
+    )
+
+
+def _role_definition_actions(role_definition: dict[str, object]) -> frozenset[str]:
+    permissions = role_definition.get("permissions")
+    if not isinstance(permissions, list) or not permissions:
+        return frozenset()
+    first_permission = permissions[0]
+    if not isinstance(first_permission, dict):
+        return frozenset()
+    actions = first_permission.get("actions")
+    if not isinstance(actions, list):
+        return frozenset()
+    return frozenset(str(action) for action in actions)
+
+
+def _role_definition_non_action_permissions(role_definition: dict[str, object]) -> frozenset[str]:
+    permissions = role_definition.get("permissions")
+    if not isinstance(permissions, list):
+        return frozenset()
+    entries: list[str] = []
+    for permission in permissions:
+        if not isinstance(permission, dict):
+            continue
+        for key in ("notActions", "dataActions", "notDataActions"):
+            values = permission.get(key)
+            if isinstance(values, list):
+                entries.extend(f"{key}:{value}" for value in values)
+    return frozenset(str(entry) for entry in entries)
+
+
+def check_agent_alert_lifecycle_rbac(
+    config: Config, agent_context: ctx.AgentContext
+) -> CheckResult:
+    """Verify the UAMI holds this deployment's custom alert-lifecycle role at
+    subscription scope, the system-assigned identity does not get a duplicate
+    subscription-scoped write grant, neither identity has Monitoring
+    Contributor at subscription scope, and the UAMI keeps Monitoring Reader on
+    the agent resource group.
     """
 
     subscription_scope = f"/subscriptions/{agent_context.agent_id.split('/')[2]}"
     agent_rg_scope = _resource_group_scope(agent_context.agent_id)
+    expected_role_name = _alert_lifecycle_role_name(config, agent_context)
     findings = []
     ok = True
-    for label, principal_id in (
-        ("UAMI", agent_context.uami_principal_id),
-        ("system-assigned identity", agent_context.system_identity_principal_id),
-    ):
-        roles, result = azure_cli.role_assignments(principal_id, subscription_scope)
-        if not result.ok:
+
+    role_definition, role_result = azure_cli.role_definition_by_name(expected_role_name)
+    if role_definition is None:
+        ok = False
+        findings.append(
+            f"custom role {expected_role_name!r}: missing or unreadable "
+            f"({role_result.diagnostic()})"
+        )
+    else:
+        actions = _role_definition_actions(role_definition)
+        non_action_permissions = _role_definition_non_action_permissions(role_definition)
+        if actions != _EXPECTED_ALERT_LIFECYCLE_ACTIONS or non_action_permissions:
             ok = False
-            findings.append(f"{label}: could not list subscription roles ({result.diagnostic()})")
-            continue
-        if "Monitoring Contributor" not in roles:
-            ok = False
-            findings.append(f"{label}: missing Monitoring Contributor at subscription scope")
+            findings.append(
+                f"custom role {expected_role_name!r}: actions={sorted(actions)} "
+                f"(expected {sorted(_EXPECTED_ALERT_LIFECYCLE_ACTIONS)}), "
+                f"other permissions={sorted(non_action_permissions)}"
+            )
         else:
-            findings.append(f"{label}: has Monitoring Contributor at subscription scope")
+            findings.append(
+                f"custom role {expected_role_name!r}: exactly alert read/change-state actions"
+            )
+
+    uami_roles, uami_sub_result = azure_cli.role_assignments(
+        agent_context.uami_principal_id, subscription_scope
+    )
+    if not uami_sub_result.ok:
+        ok = False
+        findings.append(f"UAMI: could not list subscription roles ({uami_sub_result.diagnostic()})")
+    else:
+        if expected_role_name not in uami_roles:
+            ok = False
+            findings.append(f"UAMI: missing {expected_role_name} at subscription scope")
+        else:
+            findings.append(f"UAMI: has {expected_role_name} at subscription scope")
+        if _FORBIDDEN_SUBSCRIPTION_MONITORING_ROLE in uami_roles:
+            ok = False
+            findings.append("UAMI: forbidden Monitoring Contributor still present")
+
+    system_roles, system_sub_result = azure_cli.role_assignments(
+        agent_context.system_identity_principal_id, subscription_scope
+    )
+    if not system_sub_result.ok:
+        ok = False
+        findings.append(
+            f"system-assigned identity: could not list subscription roles "
+            f"({system_sub_result.diagnostic()})"
+        )
+    else:
+        if expected_role_name in system_roles:
+            ok = False
+            findings.append("system-assigned identity: duplicate custom alert role present")
+        if _FORBIDDEN_SUBSCRIPTION_MONITORING_ROLE in system_roles:
+            ok = False
+            findings.append(
+                "system-assigned identity: forbidden Monitoring Contributor still present"
+            )
+        if expected_role_name not in system_roles and (
+            _FORBIDDEN_SUBSCRIPTION_MONITORING_ROLE not in system_roles
+        ):
+            findings.append(
+                "system-assigned identity: no subscription-scoped alert write role present"
+            )
 
     if agent_rg_scope is not None:
         uami_rg_roles, uami_rg_result = azure_cli.role_assignments(
@@ -1124,7 +1218,7 @@ def run_verify(config: Config, *, echo: Echo = print) -> int:
         )
         results.append(check_agent_action_identity(agent_context, agent_data))
         results.append(check_agent_workload_rbac(config, agent_context, workload_context))
-        results.append(check_agent_alert_lifecycle_rbac(agent_context))
+        results.append(check_agent_alert_lifecycle_rbac(config, agent_context))
         results.append(check_agent_admin_rbac(agent_context))
         results.append(check_agent_connectors(agent_context))
         results.append(check_agent_endpoints(agent_context, agent_data))

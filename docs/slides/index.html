@@ -243,7 +243,7 @@
           <tbody>
             <tr class="fragment"><td>Workload resource group</td><td>Reader + Log Analytics Reader</td></tr>
             <tr class="fragment"><td>ca-pulsemart-demo (Container App only)</td><td>Container Apps Contributor</td></tr>
-            <tr class="fragment"><td>Subscription</td><td>Monitoring Contributor - monitoring-plane write, alert lifecycle only</td></tr>
+            <tr class="fragment"><td>Subscription</td><td>Custom alert-lifecycle role - alert read/change-state only</td></tr>
             <tr class="fragment"><td>Agent resource group</td><td>Monitoring Reader</td></tr>
           </tbody>
         </table>
@@ -253,13 +253,12 @@
           <code>agent-rbac-admin</code>.</p>
       </div>
       <div class="notes" hidden>
-        <p>"Monitoring Contributor" at subscription scope is not
-          subscription-wide Contributor - Azure Monitor alert instances have
-          no containing resource group, so this is the narrowest scope that
-          reaches alert lifecycle operations at all, and it grants nothing
-          outside Microsoft.Insights/Microsoft.AlertsManagement. Container
-          Apps write is scoped to the one Container App, not the resource
-          group. This is the "narrow" workload_access_level from SPEC.md
+        <p>Azure Monitor alert instances have no containing resource group, so
+          this demo uses a subscription-scoped custom role with only
+          Microsoft.AlertsManagement/alerts/read and changestate/action, assigned
+          only to the action UAMI. Container Apps write is scoped to the one
+          Container App, not the resource group. This is the "narrow"
+          workload_access_level from SPEC.md
           section 9 - and the agent's UAMI deliberately does NOT hold "SRE
           Agent Administrator" (see the Act beat for why that mattered).</p>
       </div>
