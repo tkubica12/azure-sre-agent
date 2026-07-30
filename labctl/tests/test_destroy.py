@@ -225,6 +225,55 @@ def test_destroy_refuses_on_unrecognized_child_resource(
     assert any("UNRECOGNIZED" in m for m in messages)
 
 
+def test_destroy_refuses_when_resource_group_disappears_before_inventory(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    _patch_common(monkeypatch)
+
+    def show_rg(name: str, **_kw: object) -> tuple[dict[str, object] | None, object]:
+        if show_rg.calls == 5 and name == "rg-workload":
+            show_rg.calls += 1
+            return None, make_result(returncode=1, stderr="transient read failure")
+        show_rg.calls += 1
+        return (
+            {"id": f"/subscriptions/sub-1/resourceGroups/{name}", "tags": _EXPECTED_TAGS},
+            make_result(),
+        )
+
+    show_rg.calls = 0  # type: ignore[attr-defined]
+    monkeypatch.setattr(destroy_mod, "resource_group_show", show_rg)
+    monkeypatch.setattr(
+        destroy_mod.ctx,
+        "load_resource_group_ids",
+        lambda config, **_kw: (
+            ResourceGroupIds(
+                agent_resource_group_id="/subscriptions/sub-1/resourceGroups/rg-agent",
+                workload_resource_group_id="/subscriptions/sub-1/resourceGroups/rg-workload",
+            ),
+            None,
+        ),
+    )
+    plan_calls: list[object] = []
+    monkeypatch.setattr(
+        destroy_mod.terraform_cli,
+        "plan",
+        lambda cwd, **kw: plan_calls.append(kw) or make_result(),
+    )
+    messages: list[str] = []
+
+    result = destroy_mod.run_destroy(
+        make_config(tmp_path), yes=True, plan_only=True, echo=messages.append
+    )
+
+    assert result.exit_code == 2
+    assert not plan_calls
+    assert any("rg-agent: no child resources to check" in m for m in messages)
+    assert any(
+        "rg-workload: could not query resource group before child-resource inventory" in m
+        for m in messages
+    )
+
+
 def test_destroy_allow_unrecognized_resources_override_proceeds(
     monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:

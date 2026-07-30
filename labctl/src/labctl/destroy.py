@@ -274,7 +274,15 @@ def _check_resource_group_contents(
     for rg_name in (config.resource_groups.agent, config.resource_groups.workload):
         group_data, group_result = resource_group_show(rg_name)
         if group_data is None:
-            continue  # already reported by _check_resource_group_tags
+            if is_not_found(group_result):
+                echo(f"  {rg_name}: not found; skipping child-resource inventory.")
+            else:
+                echo(
+                    f"  {rg_name}: could not query resource group before child-resource "
+                    f"inventory ({group_result.diagnostic()}); treating this as a failure."
+                )
+                ok = False
+            continue
 
         resources, result = resource_list(rg_name)
         if resources is None:

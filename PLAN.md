@@ -1,10 +1,13 @@
 # Implementation plan
 
-**Updated:** 2026-07-29 (Milestone 7 clean-room validation pass)  
-**Current milestone:** 7 - Clean-room final validation (complete this session,
-with one critical finding escalated to the product owner -- see Milestone 7
-Finding F1: the repository's actual git history/remote does not contain the
-implementation)
+**Updated:** 2026-07-30 (final clean-room validation rerun completed after Azure
+CLI authentication was restored)  
+**Current milestone:** 7 - Clean-room final validation complete; environment is
+left deployed, healthy, and reset. The latest resumed rerun closed the
+second-round SRE findings with one honest qualification: the canary
+revision-attribution claim is substantiated by independent raw KQL and the
+agent transcript's visible reasoning, but the data-plane API still does not
+expose every internal telemetry query as first-class tool output.
 
 ## Delivery strategy
 
@@ -633,6 +636,205 @@ actually hitting it (not by inside knowledge), and fixed what a `labctl`/
 Terraform change could fix. One finding (F1) is a repository-state problem no
 amount of `labctl`/Terraform change can fix and is escalated to the product
 owner.
+
+#### Addendum, 2026-07-30: final clean-room rerun blocked before Azure mutation
+
+The requested final destroy-and-rebuild rerun did **not** complete in this
+session. The run captured the pre-destroy baseline from Terraform outputs and
+Azure role-definition lookup first: current agent UAMI principal hash
+`14cf4ac7db6b9558`, system identity principal hash `29f7f0ac037abe1a`, data-plane
+endpoint hash `8c2a37fa2d718f6d`, and custom role
+`Azure SRE Agent Alert Lifecycle - sre-agent-demo - local` with role-ID hash
+`7972e2683ac47dd8`. Raw IDs were kept only in ignored local state under
+`.state/final_validation/`.
+
+`labctl destroy --plan-only` then reached the labctl ownership gate but failed
+before any Terraform mutation. Observed output:
+
+- both configured resource groups reported all four ownership tags matching;
+- both resource-group ARM IDs reported matching Terraform state;
+- `rg-sre-agent-demo` reported `5 resource(s) enumerated, 0 unrecognized`;
+- labctl then printed `Ownership checks passed: ownership tags,
+  child-resource inventory, exact resource-group IDs`;
+- Terraform planning failed with AzureRM provider authentication error
+  (`Please run 'az login' to setup account`).
+
+No `--yes` destroy was run after that failure, no resources were intentionally
+destroyed, and the requested cleanup proof, fresh-agent rebuild, raw scenario
+transcripts, Activity Log proof against a new UAMI, canary attribution verdict,
+repeat-deploy idempotency proof, and post-rebuild `evidence collect` could not
+be produced. A non-interactive `az login` attempt returned a user-cancelled
+broker error, so this cannot be repaired autonomously in the current CLI
+session. The environment should be treated as still deployed from the prior
+run, but this session could not query Azure afterward to prove health or reset
+state.
+
+This blocked run also exposed a material destroy-reporting concern to
+investigate before accepting the destroy gate as re-proven: the output claimed
+`child-resource inventory` passed even though it printed an inventory line for
+the agent resource group only, not for `rg-sre-agent-workload-demo`. The code
+path can skip a group if a later `resource_group_show` call returns no data
+because it assumes that condition was already reported by the tag check. In
+this run, the tag and ID checks had just reported the workload group present.
+Until reproduced with active Azure authentication, record this as an unresolved
+finding: the destroy output did not provide auditable proof that the workload
+resource group contents were enumerated.
+
+Local-only validation still completed successfully after the Azure block:
+
+- `cd labctl; .venv\Scripts\python.exe -m pytest -q`: **336 passed**.
+- `cd app; .venv\Scripts\python.exe -m pytest -q`: **11 passed**, one existing
+  Starlette/httpx deprecation warning.
+- repository root `labctl\.venv\Scripts\python.exe -m pytest tests scenarios
+  -q`: **14 passed**.
+- `labctl\.venv\Scripts\python.exe docs\tools\validate.py`: **200 passed**.
+- `node docs\tools\validate.mjs`: **31 passed**.
+
+Documentation statements now stale or at least unproven for the blocked final
+gate: the guide/README still imply an authenticated Azure CLI session is part
+of the current clean-room environment and that the 2026-07-30 final evidence
+set exists. It does not. The current canary evidence remains the curated
+2026-07-30 artifact; the requested raw tool-call/KQL/row transcript was not
+captured, so the second-round SRE review findings remain open.
+
+#### Addendum, 2026-07-30: resumed final clean-room validation completed after Azure authentication was restored
+
+The blocked addendum above is now superseded. The product owner restored Azure
+CLI authentication as the current operator account; `az account show` returned the
+expected subscription, and `labctl preflight` returned the documented baseline:
+**13 passed, 2 warned, 0 failed**. Before destroying, the previously captured
+pre-destroy hashes were re-checked against live Azure and still matched:
+agent UAMI principal `14cf4ac7db6b9558`, system identity
+`29f7f0ac037abe1a`, data-plane endpoint `8c2a37fa2d718f6d`, and custom alert
+lifecycle role definition `7972e2683ac47dd8`. A pre-destroy `labctl verify`
+against the old environment failed only the expected new-operator access path:
+the signed-in account had changed from the previous operator to the current
+operator account, so data-plane/admin reads were unauthorized until the
+environment was rebuilt and granted the current deployer the configured role.
+
+**Destroy safety finding fixed before mutation.** The earlier concern was real:
+destroy's child-resource inventory output could claim broad success without an
+auditable per-resource-group line if a group became unreadable between the tag
+check and the child inventory. `labctl/src/labctl/destroy.py` now fails closed
+when a group cannot be queried during child inventory, and
+`labctl/tests/test_destroy.py` has a regression test. Targeted destroy tests
+passed (**19 passed**), and a live `labctl destroy --plan-only` then printed
+both inventories explicitly: `rg-sre-agent-demo: 5 resource(s) enumerated,
+0 unrecognized` and `rg-sre-agent-workload-demo: 10 resource(s) enumerated,
+0 unrecognized`.
+
+**Destroy and cleanup proof.** `labctl destroy --yes` ran through labctl only.
+The command timed out after about **1499 s** while Terraform was still applying
+the saved destroy plan, but direct Azure probes showed the deletion had
+completed. Both resource groups were gone; no `Microsoft.App/agents` resources
+remained anywhere in the subscription; the custom role definition was deleted;
+the old UAMI and system principals were gone; no role assignments remained for
+the deleted principals; and no resources anywhere in the subscription carried
+this deployment's ownership tags. A follow-up `labctl destroy --plan-only`
+failed closed because state still existed but outputs were unreadable after the
+resource groups were gone, which is the desired safe behavior. The Application
+Insights "Failure Anomalies" smart-detector trade-off remains justified:
+provider resource-group deletion safety is disabled, but labctl's ownership
+tag, exact-ID, and now-auditable child-inventory checks run first and prevented
+unscoped deletion.
+
+**Rebuild from documented steps.** Following the documented lifecycle with
+`& 'labctl\.venv\Scripts\labctl.exe' ...`:
+
+- `preflight`: **13 passed, 2 warned, 0 failed**.
+- `deploy --yes`: **1157 s**; clean infrastructure, ACR cloud build, agent,
+  connectors, automatic provision, warm-up, and embedded verify completed.
+  Embedded verify had 27 passed / 1 warned / 0 failed due expected telemetry
+  ingestion lag.
+- `provision`: **34 s**, idempotent success.
+- `verify`: later **28 passed, 0 warned, 0 failed**.
+
+Freshness was proven: rebuilt UAMI hash `6e3aef7f4bac7a43` differs from the old
+`14cf4ac7db6b9558`, rebuilt endpoint hash `9b0c5465a440885b` differs from the
+old `8c2a37fa2d718f6d`, and the data-plane thread list returned
+`thread_count: 0`. The fresh agent had the expected four provisioned knowledge
+files, but no retained incident threads from the prior identity.
+
+**Scenario evidence captured from the fresh agent.** Both scenarios were run
+end-to-end and redacted raw transcripts were saved alongside existing evidence:
+
+- `scenarios/bad-deployment/evidence/act-beat-transcript-2026-07-30-cleanroom-bad-deployment.md`
+  captures 87 thread messages from `GET /api/v1/threads/<id>/messages` plus
+  raw tool-call payloads and a post-run KQL bundle. The scenario broke
+  deliberately, `demo verify bad-deployment` failed while broken, the agent
+  shifted traffic back to the baseline, and final verify passed.
+- `scenarios/canary-regression/evidence/act-beat-transcript-2026-07-30-cleanroom-canary-regression.md`
+  captures 43 thread messages and a raw post-run KQL bundle. The scenario
+  initially showed real mixed degradation, then the agent drained the canary
+  and final verify passed after alert/telemetry lag cleared.
+
+The data-plane API returned message, tool-call, and execution fields, but it
+did **not** expose every internal telemetry query and raw row as a first-class
+tool result. The evidence files therefore include an explicitly labeled
+operator-run KQL appendix using the same Azure data sources. For canary, that
+appendix is the auditable per-revision proof the reviewer requested:
+Log Analytics showed canary **55/55 failed** and baseline **0/618 failed**;
+Application Insights showed canary **53/53 failed** and baseline **0/602
+failed**; per-minute bins showed canary traffic at 100% failure while baseline
+traffic stayed at 0% failure. The honest verdict is that canary revision
+attribution is now substantiated, but the stronger claim that the transcript
+alone exposes all of the agent's internal KQL and returned rows is not true.
+The visible agent reasoning identified revision state and the canary
+environment variable before its final synthesis, then corroborated the canary
+failure concentration; present this as configuration plus telemetry
+correlation, not as telemetry-only discovery.
+
+The agent also read a freshly provisioned memory-style knowledge file during
+the canary run that contained stale bad-deployment context and correctly warned
+that memory can be stale. Because the rebuilt agent had zero retained threads
+and a different identity, this did not come from prior incident memory, but it
+does mean the "earned diagnosis" claim should emphasize fresh identity and live
+evidence, not absence of all uploaded knowledge.
+
+**Activity Log and timings.** Activity Log showed remediation writes and alert
+state changes under the new agent UAMI hash `6e3aef7f4bac7a43`; operator
+actions appeared under a different caller hash, as expected for the restored
+operator Azure CLI login. The bad-deployment run fired the alert after about
+**214 s** and `labctl demo trigger` completed in **276 s**; the total
+trigger-to-resolution path remained within the documented 12-18 minute range.
+The canary trigger command ran **438 s** and followed the expected roughly
+12-minute trigger-to-summary path once alert and telemetry lag were included.
+These remain demo timings, not guarantees; the alert and agent beats still show
+preview-service variance.
+
+**Repeat deploy and evidence collection.** A repeat `labctl deploy --yes` first
+failed because the machine's system Terraform had drifted to 1.15.8 while the
+repository pins `= 1.10.1`. Using an ignored local Terraform 1.10.1 binary under
+`.state\tools` and prepending it to PATH, repeat deploy succeeded in **474 s**:
+Terraform reported no changes, `incidentManagementConfiguration.type` remained
+`AzMonitor`, image/revision work was skipped, provision re-applied
+idempotently, and embedded verify returned **28 passed, 0 warned, 0 failed**.
+`labctl evidence collect` wrote `.evidence\20260730T081556Z`; the collected
+bundle and new transcripts were scanned for common secret/token/GUID/email/
+hostname leaks after redaction.
+
+**Final validation suites (all green):**
+
+- `cd labctl; .venv\Scripts\python.exe -m pytest -q`: **337 passed**.
+- `cd app; .venv\Scripts\python.exe -m pytest -q`: **11 passed** with the
+  existing Starlette/httpx warning.
+- repository root `labctl\.venv\Scripts\python.exe -m pytest tests scenarios
+  -q`: **14 passed**.
+- `labctl\.venv\Scripts\python.exe docs\tools\validate.py`: **200 passed**.
+- `node docs\tools\validate.mjs`: **31 passed**.
+
+**Documentation findings to hand to the docs owner (docs were intentionally not
+edited in this rerun):** the guide still links to older/curated canary evidence
+rather than the new clean-room raw transcript; any claim that canary
+attribution is proven solely by exposed agent KQL rows should be softened as
+described above; timing guidance should include this run's measured variance;
+and the operator setup should call out enforcement of Terraform 1.10.1 because
+system Terraform drift caused a real repeat-deploy failure.
+
+**Final state:** after `labctl demo reset bad-deployment`,
+`labctl demo reset canary-regression`, and `labctl verify`, the environment is
+deployed, healthy, and fully reset: **28 passed, 0 warned, 0 failed**, 100%
+traffic on the baseline revision, and both scenarios recovered.
 
 #### Finding F1 (critical, escalated -- not fixable by this session): the repository's actual git history does not contain the implementation
 
