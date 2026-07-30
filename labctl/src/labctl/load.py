@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 
 from labctl.http_client import HttpResult
@@ -80,4 +80,85 @@ def generate_checkout_load(
     )
 
 
-__all__ = ["LoadResult", "generate_checkout_load", "Poster"]
+def _classify_result(result: HttpResult) -> tuple[int, int, int]:
+    if result.ok and result.status_code < 400:
+        return 1, 0, 0
+    if result.ok:
+        return 0, 1, 0
+    return 0, 0, 1
+
+
+def generate_checkout_load_for(
+    url: str,
+    *,
+    duration_seconds: float,
+    concurrency: int = 4,
+    timeout: float = 15.0,
+    target_count: int | None = None,
+    poster: Poster = http_post,
+) -> LoadResult:
+    """POST to ``url`` continuously for ``duration_seconds``.
+
+    Used by partial canary incidents where a small traffic slice needs
+    sustained mixed production-like traffic while Azure Monitor evaluates and
+    the agent investigates.
+    """
+
+    if duration_seconds <= 0:
+        raise ValueError(f"duration_seconds must be positive, got {duration_seconds}.")
+    if concurrency <= 0:
+        raise ValueError(f"concurrency must be positive, got {concurrency}.")
+    if target_count is not None and target_count <= 0:
+        raise ValueError(f"target_count must be positive when provided, got {target_count}.")
+
+    start = time.monotonic()
+    deadline = start + duration_seconds
+    spacing_seconds = duration_seconds / target_count if target_count is not None else 0.0
+    next_submit = start
+    submitted = 0
+    total = 0
+    succeeded = 0
+    failed = 0
+    transport_errors = 0
+
+    with ThreadPoolExecutor(max_workers=concurrency) as pool:
+        futures: set[Future[HttpResult]] = set()
+        while time.monotonic() < deadline or futures:
+            while (
+                time.monotonic() < deadline
+                and len(futures) < concurrency
+                and (target_count is None or submitted < target_count)
+                and time.monotonic() >= next_submit
+            ):
+                futures.add(pool.submit(poster, url, timeout=timeout, retries=0))
+                submitted += 1
+                next_submit = start + (submitted * spacing_seconds)
+            if not futures:
+                if target_count is not None and submitted >= target_count:
+                    break
+                sleep_for = max(0.0, min(0.5, next_submit - time.monotonic()))
+                if sleep_for:
+                    time.sleep(sleep_for)
+                continue
+            wait_timeout = 0.5
+            if target_count is not None and submitted < target_count:
+                wait_timeout = max(0.0, min(wait_timeout, next_submit - time.monotonic()))
+            done, futures = wait(futures, timeout=wait_timeout, return_when=FIRST_COMPLETED)
+            for future in done:
+                result = future.result()
+                ok_count, fail_count, transport_count = _classify_result(result)
+                total += 1
+                succeeded += ok_count
+                failed += fail_count
+                transport_errors += transport_count
+
+    return LoadResult(
+        total=total,
+        succeeded=succeeded,
+        failed=failed,
+        transport_errors=transport_errors,
+        duration_seconds=time.monotonic() - start,
+    )
+
+
+__all__ = ["LoadResult", "generate_checkout_load", "generate_checkout_load_for", "Poster"]

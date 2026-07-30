@@ -55,3 +55,39 @@ resource "azurerm_monitor_metric_alert" "containerapp_5xx" {
     action_group_id = azurerm_monitor_action_group.this.id
   }
 }
+
+resource "azurerm_monitor_scheduled_query_rules_alert_v2" "canary_regression" {
+  name                    = var.canary_alert_name
+  resource_group_name     = var.resource_group_name
+  location                = var.location
+  scopes                  = [var.app_insights_id]
+  description             = "PulseMart checkout failure rate is elevated during a canary release; partition failures by Container App revision before acting."
+  severity                = var.severity
+  enabled                 = true
+  evaluation_frequency    = var.frequency
+  window_duration         = var.window_size
+  auto_mitigation_enabled = true
+  tags                    = var.tags
+
+  criteria {
+    query = <<-KQL
+      requests
+      | where name =~ "POST /api/checkout" or operation_Name =~ "POST /api/checkout"
+      | summarize total=count(), failed=countif(toint(resultCode) between (500 .. 599))
+      | where total >= 30 and failed >= 3 and todouble(failed) / todouble(total) >= 0.05
+    KQL
+
+    time_aggregation_method = "Count"
+    operator                = "GreaterThan"
+    threshold               = 0
+
+    failing_periods {
+      minimum_failing_periods_to_trigger_alert = 1
+      number_of_evaluation_periods             = 1
+    }
+  }
+
+  action {
+    action_groups = [azurerm_monitor_action_group.this.id]
+  }
+}

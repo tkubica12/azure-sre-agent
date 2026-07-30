@@ -661,7 +661,7 @@ def test_check_agent_admin_rbac_fails_when_deployer_missing_role(
     assert result.status == Status.FAIL
 
 
-def test_check_agent_admin_rbac_warns_when_deployer_unresolvable(
+def test_check_agent_admin_rbac_passes_when_deployer_unresolvable(
     monkeypatch: pytest.MonkeyPatch, result_factory
 ) -> None:
     monkeypatch.setattr(
@@ -677,7 +677,8 @@ def test_check_agent_admin_rbac_warns_when_deployer_unresolvable(
 
     result = verify.check_agent_admin_rbac(_agent_context())
 
-    assert result.status == Status.WARN
+    assert result.status == Status.PASS
+    assert "lookup unavailable" in result.detail
 
 
 def test_check_agent_connectors_pass(monkeypatch: pytest.MonkeyPatch, result_factory) -> None:

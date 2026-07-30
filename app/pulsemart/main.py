@@ -94,9 +94,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             checkout_span.set_attribute("service.release", settings.pulsemart_release)
             checkout_span.set_attribute("service.revision", settings.revision())
 
-            await _check_inventory(tracer, order_id)
+            try:
+                await _quote_order(tracer, order_id, settings)
+            except CheckoutPricingError as exc:
+                checkout_span.record_exception(exc)
+                checkout_span.set_status(Status(StatusCode.ERROR, str(exc)))
+                logger.error("checkout failed: %s", exc, extra=log_extra)
+                return JSONResponse(
+                    status_code=500,
+                    content={
+                        "order_id": order_id,
+                        "status": "failed",
+                        "error": "checkout temporarily unavailable",
+                    },
+                )
 
             try:
+                await _check_inventory(tracer, order_id)
                 await _charge_payment(tracer, order_id, settings)
             except UpstreamPaymentGatewayError as exc:
                 checkout_span.record_exception(exc)
@@ -128,10 +142,27 @@ class UpstreamPaymentGatewayError(RuntimeError):
     """Raised when the simulated payment dependency rejects authorization."""
 
 
+class CheckoutPricingError(RuntimeError):
+    """Raised when the simulated pricing dependency returns an invalid quote."""
+
+
+async def _quote_order(tracer: trace.Tracer, order_id: str, settings: Settings) -> None:
+    """Simulate a pricing-service dependency call."""
+
+    with tracer.start_as_current_span("pricing.quote") as span:
+        span.set_attribute("order.id", order_id)
+        span.set_attribute("peer.service", "pricing-service")
+        await asyncio.sleep(random.uniform(0.01, 0.03))
+        if settings.checkout_pricing_regression_active():
+            span.set_attribute("pricing.result", "error")
+            raise CheckoutPricingError("pricing service returned invalid quote total")
+        span.set_attribute("pricing.result", "quoted")
+
+
 async def _check_inventory(tracer: trace.Tracer, order_id: str) -> None:
     """Simulate an inventory-service dependency call. Always succeeds; this
-    span is present in both the healthy and failing paths so an operator can
-    see the failure is isolated to payment processing.
+    span is present in healthy and payment-failure paths so an operator can
+    distinguish inventory, pricing, and payment evidence.
     """
 
     with tracer.start_as_current_span("inventory.check") as span:
@@ -157,4 +188,4 @@ async def _charge_payment(tracer: trace.Tracer, order_id: str, settings: Setting
         span.set_attribute("payment.result", "approved")
 
 
-__all__ = ["create_app", "UpstreamPaymentGatewayError"]
+__all__ = ["CheckoutPricingError", "UpstreamPaymentGatewayError", "create_app"]

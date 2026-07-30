@@ -1,8 +1,9 @@
 # Runbook: PulseMart checkout returning HTTP 500
 
-Use this runbook whenever the `alert-pulsemart-containerapp-5xx` Azure Monitor
-alert fires, or whenever telemetry otherwise shows `POST /api/checkout`
-returning HTTP 500 on `ca-pulsemart-demo`.
+Use this runbook whenever the `alert-pulsemart-containerapp-5xx` or
+`alert-pulsemart-canary-regression` Azure Monitor alert fires, or whenever
+telemetry otherwise shows `POST /api/checkout` returning HTTP 500 on
+`ca-pulsemart-demo`.
 
 ## 1. Confirm the affected operation
 
@@ -15,31 +16,43 @@ returning HTTP 500 on `ca-pulsemart-demo`.
    15 minutes. Group by operation name and result code so the fired Container
    App 5xx alert is tied to the actual failing endpoint. Continue this runbook
    only if `POST /api/checkout` is the failing operation.
-4. Record the first failed checkout timestamp, total failed requests, and
-   failure rate.
+4. Record the first failed checkout timestamp, total failed requests, total
+   successful requests, and failure rate. If successes and failures are mixed,
+   treat the incident as a partial degradation until revision-level evidence
+   proves otherwise.
 
 ## 2. Compare the active revision with the last healthy revision
 
 1. List Container App revisions and their traffic weights (`az containerapp
-   revision list`, or the equivalent read-only Azure Resource Graph query).
-   PulseMart runs in Multiple revision mode: more than one revision can be
-   provisioned at once, but only one normally carries production traffic.
-2. Identify the revision currently carrying traffic and its creation timestamp.
-   Compare that timestamp with the first failed checkout request.
-3. Identify the revision that carried production traffic immediately before the
-   failures began. Treat it as the last known-good candidate only if it is still
-   provisioned, healthy, and has the same workload image/release expected for
-   this scenario.
-4. Diff the two revisions' observable configuration: image, revision suffix,
-   traffic weight, health state, and non-secret environment variables. A
-   configuration difference on the traffic-carrying revision that aligns with
-   the first failure timestamp is the leading deployment-regression hypothesis.
+   revision list`, `az containerapp ingress traffic show`, or equivalent
+   read-only Azure Resource Graph queries). PulseMart runs in Multiple revision
+   mode, so one or more immutable revisions can carry production traffic.
+2. If multiple revisions have nonzero traffic, partition Application Insights
+   `requests`, dependency spans, exceptions, and console logs by revision before
+   choosing a mitigation. Use `cloud_RoleInstance`,
+   `customDimensions["service.revision"]`, and
+   `customDimensions["service.instance.id"]` to map telemetry to revision
+   suffix/name. State the request counts, failure counts, and failure rates for
+   each revision separately.
+3. Quantify blast radius from both sources of evidence: the configured traffic
+   weight for the suspect revision and the observed share of failed/total
+   checkout requests in telemetry.
+4. Identify the revision currently carrying failing traffic and its creation
+   timestamp. Compare that timestamp with the first failed checkout request.
+5. Identify the healthy revision that should receive traffic after mitigation.
+   Treat it as the known-good candidate only if it is still provisioned,
+   healthy, and its recent checkout telemetry is successful.
+6. Diff the suspect and known-good revisions' observable configuration: image,
+   revision suffix, traffic weight, health state, and non-secret environment
+   variables. A configuration difference on the failing revision that aligns
+   with the first failure timestamp is the leading deployment-regression
+   hypothesis.
 
 ## 3. Confirm root cause from telemetry and source
 
 1. In Application Insights, inspect failed checkout operations and their
-   dependency spans. Determine whether `inventory.check`, `payment.charge`, or
-   the request handler failed first.
+   dependency spans. Determine whether `pricing.quote`, `inventory.check`,
+   `payment.charge`, or the request handler failed first.
 2. Inspect exception telemetry and correlated `ContainerAppConsoleLogs_CL`
    records. Quote the observed exception type/message exactly.
 3. Cross-reference the connected GitHub source for `app/pulsemart/main.py` and
@@ -54,10 +67,16 @@ returning HTTP 500 on `ca-pulsemart-demo`.
 
 ## 4. Recommend remediation
 
-1. Recommend shifting 100% of ingress traffic back to the most recent
-   known-good revision. Do not recommend restarting, scaling, or deleting
-   either revision: this scenario is designed to be reversible through traffic
-   weights, not through resource mutation.
+1. Choose the minimum traffic change that removes the failing revision from
+   production:
+   - If a canary or partial rollout has one failing revision and one healthy
+     revision, drain only the failing canary (`<bad-revision>=0`) and restore
+     the healthy revision to 100%.
+   - If all production traffic is on one failing revision, shift 100% of ingress
+     traffic back to the most recent known-good revision.
+   Do not recommend restarting, scaling, or deleting either revision: these
+   scenarios are designed to be reversible through traffic weights, not through
+   resource mutation.
 2. Do not patch source or edit environment variables in-place during the
    incident. A new source fix can be tracked later only after service recovery
    is proven.
@@ -72,7 +91,7 @@ returning HTTP 500 on `ca-pulsemart-demo`.
 After the traffic shift is applied:
 
 1. Confirm the Container App's traffic split shows 100% on the known-good
-   revision.
+   revision and 0% on the drained suspect revision.
 2. Call `POST /api/checkout` (or query recent Application Insights `requests`)
    and confirm HTTP 200 responses resume.
 3. Confirm the `alert-pulsemart-containerapp-5xx` alert transitions out of

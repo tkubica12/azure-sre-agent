@@ -93,6 +93,44 @@ def test_signed_in_object_id_none_when_command_fails(result_factory) -> None:
     assert object_id is None
 
 
+def test_signed_in_object_id_falls_back_for_service_principal(result_factory) -> None:
+    calls: list[list[str]] = []
+
+    def runner(args, **kwargs):
+        calls.append(list(args))
+        if args[:3] == ["ad", "signed-in-user", "show"]:
+            return result_factory(stdout="", stderr="not a user", returncode=1)
+        if args[:2] == ["account", "show"]:
+            return result_factory(
+                stdout="""
+                {
+                  "id": "sub",
+                  "name": "demo",
+                  "tenantId": "tenant",
+                  "user": {"name": "app-client-id", "type": "servicePrincipal"}
+                }
+                """,
+                returncode=0,
+            )
+        return result_factory(stdout="sp-object-id\n", returncode=0)
+
+    object_id, raw = signed_in_object_id(runner=runner)
+
+    assert object_id == "sp-object-id"
+    assert raw.stdout == "sp-object-id\n"
+    assert calls[-1] == [
+        "ad",
+        "sp",
+        "show",
+        "--id",
+        "app-client-id",
+        "--query",
+        "id",
+        "--output",
+        "tsv",
+    ]
+
+
 def test_role_assignments_parses_list(result_factory) -> None:
     result = result_factory(stdout='["Owner", "Reader"]', returncode=0)
 

@@ -21,6 +21,7 @@ def _client(**overrides: str) -> TestClient:
         pulsemart_environment=overrides.get("pulsemart_environment", "test"),
         container_app_revision=overrides.get("container_app_revision", "test-revision"),
         payment_gateway_profile=overrides.get("payment_gateway_profile", "standard"),
+        checkout_pricing_profile=overrides.get("checkout_pricing_profile", "standard"),
     )
     return TestClient(create_app(settings))
 
@@ -50,6 +51,7 @@ def test_api_status_reports_release_and_revision_without_private_configuration()
     assert body["revision"] == "rev-42"
     assert "environment" not in body
     assert "payment_gateway_profile" not in body
+    assert "checkout_pricing_profile" not in body
     assert "failure_mode" not in body
     assert "timestamp" in body
 
@@ -85,6 +87,20 @@ def test_checkout_returns_500_deterministically_during_payment_regression() -> N
         assert "checkout-500" not in response.text.lower()
 
 
+def test_checkout_returns_500_deterministically_during_pricing_regression() -> None:
+    client = _client(checkout_pricing_profile="strict-decimal")
+    for _ in range(5):
+        response = client.post("/api/checkout")
+        assert response.status_code == 500
+        body = response.json()
+        assert body["status"] == "failed"
+        assert "order_id" in body
+        assert body["error"] == "checkout temporarily unavailable"
+        assert "demo" not in response.text.lower()
+        assert "failure mode" not in response.text.lower()
+        assert "strict-decimal" not in response.text.lower()
+
+
 def test_no_public_endpoint_toggles_payment_regression() -> None:
     """There must be no HTTP surface to mutate payment behavior."""
 
@@ -105,3 +121,16 @@ def test_settings_rejects_unsupported_payment_profile() -> None:
             load_settings()
     finally:
         del os.environ["PAYMENT_GATEWAY_PROFILE"]
+
+
+def test_settings_rejects_unsupported_checkout_pricing_profile() -> None:
+    import os
+
+    from pulsemart.settings import load_settings
+
+    os.environ["CHECKOUT_PRICING_PROFILE"] = "not-a-real-profile"
+    try:
+        with pytest.raises(ValueError):
+            load_settings()
+    finally:
+        del os.environ["CHECKOUT_PRICING_PROFILE"]

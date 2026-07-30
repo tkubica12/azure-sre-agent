@@ -48,10 +48,13 @@ def test_parse_scenario_definition_reads_every_section() -> None:
     assert scenario.title == "Bad deployment"
     assert scenario.fault.env == {"PAYMENT_GATEWAY_PROFILE": "legacy-acquirer"}
     assert scenario.fault.revision_suffix_prefix == "fault"
+    assert scenario.fault.traffic_weight == 100
     assert scenario.alert.name == "alert-pulsemart-containerapp-5xx"
     assert scenario.alert.expected_time_to_fire_minutes == (1, 6)
+    assert scenario.alert.target_resource == "container_app"
     assert scenario.load.request_count == 40
     assert scenario.load.min_failures_required == 6
+    assert scenario.load.duration_seconds == 0.0
     assert scenario.incident.title_contains == "pulsemart"
     assert scenario.checks["fault_active"] == ("checkout_returns_500",)
 
@@ -69,6 +72,35 @@ def test_parse_scenario_definition_requires_alert_name() -> None:
 
     with pytest.raises(ScenarioError, match="name"):
         parse_scenario_definition(document, slug="bad-deployment")
+
+
+def test_parse_scenario_definition_reads_canary_options() -> None:
+    document = dict(MINIMAL_DOCUMENT)
+    document["fault"] = {
+        "env": {"CHECKOUT_PRICING_PROFILE": "strict-decimal"},
+        "revision_suffix_prefix": "canary",
+        "traffic_weight": 10,
+    }
+    document["alert"] = {
+        "name": "alert-pulsemart-canary-regression",
+        "target_resource": "app_insights",
+        "expected_time_to_fire_minutes": [1, 6],
+        "max_wait_seconds": 600,
+        "poll_interval_seconds": 15,
+    }
+    document["load"] = {
+        "request_count": 240,
+        "concurrency": 4,
+        "request_timeout_seconds": 15,
+        "min_failures_required": 6,
+        "duration_seconds": 360,
+    }
+
+    scenario = parse_scenario_definition(document, slug="bad-deployment")
+
+    assert scenario.fault.traffic_weight == 10
+    assert scenario.alert.target_resource == "app_insights"
+    assert scenario.load.duration_seconds == 360
 
 
 def test_list_scenario_slugs_finds_directories_with_scenario_yaml(tmp_path) -> None:
@@ -107,6 +139,18 @@ def test_load_scenario_definition_reads_the_real_shipped_scenario() -> None:
     assert scenario.slug == "bad-deployment"
     assert scenario.fault.env.get("PAYMENT_GATEWAY_PROFILE") == "legacy-acquirer"
     assert scenario.incident.title_contains == "pulsemart"
+
+
+def test_load_scenario_definition_reads_the_real_canary_scenario() -> None:
+    repo_root = _real_repo_root()
+    config = make_config(repo_root)
+
+    scenario = load_scenario_definition(config, "canary-regression")
+
+    assert scenario.slug == "canary-regression"
+    assert scenario.fault.env == {"CHECKOUT_PRICING_PROFILE": "strict-decimal"}
+    assert scenario.fault.traffic_weight == 10
+    assert scenario.alert.target_resource == "app_insights"
 
 
 def _real_repo_root():

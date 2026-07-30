@@ -3,10 +3,11 @@ metadata:
 spec:
   instructions: subagents/rollback-advisor.instructions.md
   handoffDescription: >-
-    Executes a traffic rollback to the known-good PulseMart Container App
-    revision based on the incident-investigator's findings: states the exact
-    command first, then runs it for real under the agent's own identity, then
-    verifies and reports recovery.
+    Executes the minimum PulseMart Container App traffic-weight mitigation
+    based on the incident-investigator's findings: rollback a full bad
+    deployment or drain only a bad canary, states the exact command first, then
+    runs it for real under the agent's own identity, then verifies and reports
+    recovery.
   handoffs: []
   # Product-owner decision, 2026-07-30 (see PLAN.md Milestone 5 "Act beat
   # rework" and SPEC.md section 5 Scene 5): restore agent-executed

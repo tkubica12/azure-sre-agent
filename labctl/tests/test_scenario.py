@@ -90,6 +90,41 @@ def _scenario() -> ScenarioDefinition:
     )
 
 
+def _canary_scenario() -> ScenarioDefinition:
+    return ScenarioDefinition(
+        slug="canary-regression",
+        title="Canary regression",
+        summary="x",
+        estimated_duration_minutes=20,
+        fault=FaultDefinition(
+            env={"CHECKOUT_PRICING_PROFILE": "strict-decimal"},
+            revision_suffix_prefix="canary",
+            traffic_weight=10,
+        ),
+        alert=AlertDefinition(
+            name="alert-pulsemart-canary-regression",
+            expected_time_to_fire_minutes=(1, 6),
+            max_wait_seconds=1.0,
+            poll_interval_seconds=0.01,
+            target_resource="app_insights",
+        ),
+        load=LoadDefinition(
+            request_count=20,
+            concurrency=2,
+            request_timeout_seconds=1.0,
+            min_failures_required=2,
+            duration_seconds=0.01,
+        ),
+        incident=IncidentDefinition(
+            response_plan="containerapp-5xx",
+            handling_subagent="incident-investigator",
+            title_contains="canary",
+            severity="Sev2",
+        ),
+        checks={},
+    )
+
+
 def _deployment_state() -> DeploymentState:
     return DeploymentState(
         image_tag="abc123-def456",
@@ -327,6 +362,78 @@ def test_run_demo_trigger_reuses_the_existing_fault_revision_when_already_active
     assert not update_calls, "an already-active fault revision must be reused, not recreated"
 
 
+def test_run_demo_trigger_canary_sets_partial_traffic_and_uses_app_insights_alert_target(
+    monkeypatch, tmp_path
+) -> None:
+    _patch_common(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        scenario_mod, "load_scenario_definition", lambda config, slug: _canary_scenario()
+    )
+    monkeypatch.setattr(scenario_mod.time, "time", lambda: 1700000000.0)
+    scenario = _canary_scenario()
+    suffix = scenario_mod._fault_revision_suffix(
+        "ca-pulsemart-demo", scenario.fault.revision_suffix_prefix, "abc123-def456", 1700000000
+    )
+    fault_revision_name = f"ca-pulsemart-demo--{suffix}"
+    monkeypatch.setattr(
+        scenario_mod.workload_azure,
+        "containerapp_update_image",
+        lambda *a, **k: make_result(),
+    )
+    monkeypatch.setattr(
+        scenario_mod.workload_azure,
+        "containerapp_revision_list",
+        lambda *a, **k: (
+            [
+                {"name": BASELINE, "properties": {"provisioningState": "Provisioned"}},
+                {"name": fault_revision_name, "properties": {"provisioningState": "Provisioned"}},
+            ],
+            make_result(),
+        ),
+    )
+    traffic_calls: list[dict] = []
+    monkeypatch.setattr(
+        scenario_mod.workload_azure,
+        "containerapp_ingress_traffic_set",
+        lambda name, rg, weights, **k: traffic_calls.append(weights) or make_result(),
+    )
+    alert_targets: list[str | None] = []
+
+    def list_alerts(sub, *, target_resource_id=None, **k):
+        alert_targets.append(target_resource_id)
+        return (
+            [
+                {
+                    "properties": {
+                        "essentials": {
+                            "alertRule": "alert-pulsemart-canary-regression",
+                            "monitorCondition": "Fired",
+                        }
+                    }
+                }
+            ],
+            make_result(),
+        )
+
+    monkeypatch.setattr(scenario_mod.workload_azure, "list_fired_alerts", list_alerts)
+    monkeypatch.setattr(scenario_mod, "http_post", _http(200))
+    monkeypatch.setattr(
+        scenario_mod,
+        "generate_checkout_load_for",
+        lambda *a, **k: LoadResult(
+            total=20, succeeded=18, failed=2, transport_errors=0, duration_seconds=0.1
+        ),
+    )
+
+    result = scenario_mod.run_demo_trigger(
+        make_config(tmp_path), "canary-regression", echo=lambda _m: None, sleep=lambda _s: None
+    )
+
+    assert result.exit_code == 0
+    assert traffic_calls[-1] == {BASELINE: 90, fault_revision_name: 10}
+    assert alert_targets and alert_targets[-1] == _workload_context().app_insights_resource_id
+
+
 def test_run_demo_trigger_fails_when_load_does_not_produce_enough_failures(
     monkeypatch, tmp_path
 ) -> None:
@@ -428,6 +535,54 @@ def test_run_demo_verify_reports_fault_phase_checks(monkeypatch, tmp_path) -> No
     monkeypatch.setattr(scenario_mod, "http_post", _http(500))
 
     result = scenario_mod.run_demo_verify(config, "bad-deployment", echo=lambda _m: None)
+
+    assert result.exit_code == 1
+
+
+def test_run_demo_verify_reports_partial_canary_fault_phase(monkeypatch, tmp_path) -> None:
+    _patch_common(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        scenario_mod, "load_scenario_definition", lambda config, slug: _canary_scenario()
+    )
+    config = make_config(tmp_path)
+    monkeypatch.setattr(scenario_mod.ctx, "load_agent_context", lambda config, **_kw: (None, None))
+    monkeypatch.setattr(
+        scenario_mod.workload_azure,
+        "containerapp_ingress_traffic_show",
+        lambda *a, **k: (
+            [
+                {"revisionName": BASELINE, "weight": 90},
+                {"revisionName": FAULT_REVISION, "weight": 10},
+            ],
+            make_result(),
+        ),
+    )
+    monkeypatch.setattr(
+        scenario_mod.workload_azure,
+        "list_fired_alerts",
+        lambda sub, **k: (
+            [
+                {
+                    "properties": {
+                        "essentials": {
+                            "alertRule": "alert-pulsemart-canary-regression",
+                            "monitorCondition": "Fired",
+                        }
+                    }
+                }
+            ],
+            make_result(),
+        ),
+    )
+    monkeypatch.setattr(
+        scenario_mod,
+        "generate_checkout_load",
+        lambda *a, **k: LoadResult(
+            total=60, succeeded=54, failed=6, transport_errors=0, duration_seconds=0.3
+        ),
+    )
+
+    result = scenario_mod.run_demo_verify(config, "canary-regression", echo=lambda _m: None)
 
     assert result.exit_code == 1
 

@@ -29,9 +29,25 @@ variable "container_app_id" {
   type        = string
 }
 
+variable "app_insights_id" {
+  description = "Resource ID of the Application Insights component queried by the canary-regression scheduled query alert."
+  type        = string
+}
+
+variable "location" {
+  description = "Azure region for scheduled query alert resources."
+  type        = string
+}
+
 variable "alert_name" {
   description = "Name of the metric alert rule."
   type        = string
+}
+
+variable "canary_alert_name" {
+  description = "Name of the canary-regression scheduled query alert rule."
+  type        = string
+  default     = "alert-pulsemart-canary-regression"
 }
 
 variable "severity" {

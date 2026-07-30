@@ -95,7 +95,10 @@ module "alerting" {
   action_group_short_name = "pulsemart"
   notification_email      = var.alert_notification_email
   container_app_id        = module.container_app.id
+  app_insights_id         = module.observability.app_insights_id
+  location                = var.region
   alert_name              = "alert-pulsemart-containerapp-5xx"
+  canary_alert_name       = "alert-pulsemart-canary-regression"
   threshold               = var.alert_threshold_5xx
   tags                    = var.tags
 }

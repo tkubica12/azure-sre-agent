@@ -99,6 +99,16 @@ output "metric_alert_name" {
   value       = module.alerting.metric_alert_name
 }
 
+output "canary_alert_id" {
+  description = "Resource ID of the canary-regression scheduled query alert rule."
+  value       = module.alerting.canary_alert_id
+}
+
+output "canary_alert_name" {
+  description = "Name of the canary-regression scheduled query alert rule."
+  value       = module.alerting.canary_alert_name
+}
+
 output "agent_id" {
   description = "Full resource ID of the Azure SRE Agent (Microsoft.App/agents)."
   value       = module.sre_agent.agent_id
@@ -163,4 +173,3 @@ output "agent_log_analytics_workspace_id" {
   description = "GUID-formatted workspace ID of the agent's own Log Analytics workspace."
   value       = module.agent_observability.log_analytics_workspace_id
 }
-

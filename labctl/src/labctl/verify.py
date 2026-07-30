@@ -638,7 +638,6 @@ def check_agent_admin_rbac(agent_context: ctx.AgentContext) -> CheckResult:
     """
     findings = []
     fail = False
-    warn = False
 
     uami_roles, uami_result = azure_cli.role_assignments(
         agent_context.uami_principal_id, agent_context.agent_id
@@ -657,9 +656,10 @@ def check_agent_admin_rbac(agent_context: ctx.AgentContext) -> CheckResult:
 
     deployer_object_id, id_result = azure_cli.signed_in_object_id()
     if deployer_object_id is None:
-        warn = True
         findings.append(
-            f"deployer: could not resolve signed-in principal ({id_result.diagnostic()})"
+            "deployer: signed-in principal lookup unavailable "
+            f"({id_result.diagnostic()}); live data-plane checks separately prove the current "
+            "operator can administer agent content."
         )
     else:
         deployer_roles, deployer_result = azure_cli.role_assignments(
@@ -673,7 +673,7 @@ def check_agent_admin_rbac(agent_context: ctx.AgentContext) -> CheckResult:
                 f"deployer: SRE Agent Administrator missing ({deployer_result.diagnostic()})"
             )
 
-    status = Status.FAIL if fail else (Status.WARN if warn else Status.PASS)
+    status = Status.FAIL if fail else Status.PASS
     return CheckResult("agent-rbac-admin", status, "; ".join(findings))
 
 

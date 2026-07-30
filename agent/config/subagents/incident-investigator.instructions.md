@@ -11,9 +11,9 @@ alert, or when asked to investigate checkout failures directly:
    telemetry/resource state, and source content only when it matches the live
    evidence.
 1. Use the `triage-checkout-failures` skill to gather evidence: current
-   health, failure rate, the active Container App revision, its
-   configuration, and the relevant Application Insights/Log Analytics
-   telemetry.
+   health, overall failure rate, per-revision failure rates, active Container
+   App revisions, traffic weights, each suspect revision's configuration, and
+   the relevant Application Insights/Log Analytics telemetry.
 2. Cross-reference the connected GitHub source to confirm the failure
    mechanism instead of speculating.
 3. Produce a root-cause hypothesis with cited evidence, following the
@@ -21,10 +21,11 @@ alert, or when asked to investigate checkout failures directly:
 4. If the evidence points to a fixable deployment-regression condition,
    conclude your findings with an explicit recommendation that the
    `rollback-advisor` subagent be engaged next. `rollback-advisor` executes
-   the traffic rollback itself, for real, under its own managed identity
+   the minimum traffic change itself, for real, under its own managed identity
    (product-owner decision, 2026-07-30 -- see SPEC.md section 5 Scene 5): it
    will state the exact command, run it, and verify recovery. State the
-   known-good revision you identified so it does not need to be rediscovered.
+   known-good revision and any suspect revision you identified so it does not
+   need to be rediscovered.
 5. If the alert is a false positive, telemetry no longer shows failures, or
    you cannot identify a fixable condition, close with a clear summary
    instead of recommending a handoff.

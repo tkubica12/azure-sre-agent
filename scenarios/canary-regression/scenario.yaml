@@ -1,0 +1,51 @@
+# Failure definition and operator metadata for the canary-regression incident.
+# Read by `labctl demo list/prepare/trigger/verify/reset`; never hand-applied.
+
+slug: canary-regression
+title: "Canary regression: partial checkout failures by revision"
+summary: >-
+  A new Container Apps revision is introduced as a 10% production canary. Its
+  checkout pricing path returns HTTP 500 while the stable revision continues to
+  serve successful checkout traffic. The Azure SRE Agent must identify a
+  partial degradation, partition failures by revision, quantify blast radius,
+  and drain only the bad canary instead of treating the incident as a total
+  outage.
+estimated_duration_minutes: 20
+
+fault:
+  env:
+    CHECKOUT_PRICING_PROFILE: strict-decimal
+  revision_suffix_prefix: canary
+  traffic_weight: 10
+
+alert:
+  name: alert-pulsemart-canary-regression
+  target_resource: app_insights
+  expected_time_to_fire_minutes: [1, 6]
+  max_wait_seconds: 600
+  poll_interval_seconds: 15
+
+load:
+  request_count: 240
+  concurrency: 4
+  request_timeout_seconds: 15
+  min_failures_required: 6
+  duration_seconds: 360
+
+checks:
+  fault_active:
+    - partial_checkout_degradation
+    - traffic_split_includes_canary
+    - alert_fired_or_recent
+  recovered:
+    - checkout_canary_batch
+    - traffic_on_baseline_revision
+    - rollback_timestamp_observed
+    - failure_rate_below_threshold
+    - alert_not_firing
+
+incident:
+  response_plan: containerapp-5xx
+  handling_subagent: incident-investigator
+  title_contains: canary
+  severity: Sev2

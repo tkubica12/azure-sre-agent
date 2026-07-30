@@ -231,14 +231,22 @@ def signed_in_object_id(*, runner: AzRunner = run_az) -> tuple[str | None, Comma
     """
 
     result = runner(["ad", "signed-in-user", "show", "--query", "id", "--output", "tsv"], retries=0)
-    if not result.ok:
-        # Service principals do not have a signed-in-user object; fall back
-        # to the account's home account ID which az also exposes via
-        # `az account show`. Callers treat a missing object id as WARN, not
-        # a hard failure, since role-assignment checks are best-effort.
+    if result.ok:
+        object_id = result.stdout.strip()
+        return (object_id or None), result
+
+    account, account_result = account_show(runner=runner)
+    if account is None or account.user_type.lower() != "serviceprincipal" or not account.user_name:
         return None, result
-    object_id = result.stdout.strip()
-    return (object_id or None), result
+
+    sp_result = runner(
+        ["ad", "sp", "show", "--id", account.user_name, "--query", "id", "--output", "tsv"],
+        retries=0,
+    )
+    if not sp_result.ok:
+        return None, account_result if not account_result.ok else sp_result
+    object_id = sp_result.stdout.strip()
+    return (object_id or None), sp_result
 
 
 def role_assignments(

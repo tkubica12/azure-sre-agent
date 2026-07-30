@@ -24,6 +24,12 @@ SUPPORTED_PAYMENT_GATEWAY_PROFILES = frozenset(
     {PAYMENT_GATEWAY_PROFILE_STANDARD, PAYMENT_GATEWAY_PROFILE_LEGACY_ACQUIRER}
 )
 
+CHECKOUT_PRICING_PROFILE_STANDARD = "standard"
+CHECKOUT_PRICING_PROFILE_STRICT_DECIMAL = "strict-decimal"
+SUPPORTED_CHECKOUT_PRICING_PROFILES = frozenset(
+    {CHECKOUT_PRICING_PROFILE_STANDARD, CHECKOUT_PRICING_PROFILE_STRICT_DECIMAL}
+)
+
 
 class Settings(BaseSettings):
     """Environment-driven settings. Field names map to env vars of the same
@@ -48,6 +54,7 @@ class Settings(BaseSettings):
     # endpoint; it can only be set via Container Apps revision configuration
     # by an authenticated operator (see AGENTS.md).
     payment_gateway_profile: str = PAYMENT_GATEWAY_PROFILE_STANDARD
+    checkout_pricing_profile: str = CHECKOUT_PRICING_PROFILE_STANDARD
 
     pulsemart_log_level: str = "INFO"
 
@@ -57,6 +64,9 @@ class Settings(BaseSettings):
     def payment_gateway_regression_active(self) -> bool:
         return self.payment_gateway_profile == PAYMENT_GATEWAY_PROFILE_LEGACY_ACQUIRER
 
+    def checkout_pricing_regression_active(self) -> bool:
+        return self.checkout_pricing_profile == CHECKOUT_PRICING_PROFILE_STRICT_DECIMAL
+
 
 def load_settings() -> Settings:
     settings = Settings()
@@ -65,12 +75,20 @@ def load_settings() -> Settings:
             f"Unsupported PAYMENT_GATEWAY_PROFILE={settings.payment_gateway_profile!r}. "
             f"Supported values: {sorted(SUPPORTED_PAYMENT_GATEWAY_PROFILES)!r}."
         )
+    if settings.checkout_pricing_profile not in SUPPORTED_CHECKOUT_PRICING_PROFILES:
+        raise ValueError(
+            f"Unsupported CHECKOUT_PRICING_PROFILE={settings.checkout_pricing_profile!r}. "
+            f"Supported values: {sorted(SUPPORTED_CHECKOUT_PRICING_PROFILES)!r}."
+        )
     return settings
 
 
 __all__ = [
+    "CHECKOUT_PRICING_PROFILE_STANDARD",
+    "CHECKOUT_PRICING_PROFILE_STRICT_DECIMAL",
     "PAYMENT_GATEWAY_PROFILE_LEGACY_ACQUIRER",
     "PAYMENT_GATEWAY_PROFILE_STANDARD",
+    "SUPPORTED_CHECKOUT_PRICING_PROFILES",
     "SUPPORTED_PAYMENT_GATEWAY_PROFILES",
     "Settings",
     "load_settings",

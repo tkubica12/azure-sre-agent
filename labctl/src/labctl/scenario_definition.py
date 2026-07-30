@@ -34,6 +34,7 @@ def scenarios_root(config: Config) -> Path:
 class FaultDefinition:
     env: dict[str, str]
     revision_suffix_prefix: str
+    traffic_weight: int = 100
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,6 +43,7 @@ class AlertDefinition:
     expected_time_to_fire_minutes: tuple[int, int]
     max_wait_seconds: float
     poll_interval_seconds: float
+    target_resource: str = "container_app"
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,6 +52,7 @@ class LoadDefinition:
     concurrency: int
     request_timeout_seconds: float
     min_failures_required: int
+    duration_seconds: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,7 +112,10 @@ def parse_scenario_definition(document: dict[str, Any], *, slug: str) -> Scenari
     fault = FaultDefinition(
         env={str(k): str(v) for k, v in env_raw.items()},
         revision_suffix_prefix=str(fault_raw.get("revision_suffix_prefix", "fault")),
+        traffic_weight=int(fault_raw.get("traffic_weight", 100)),
     )
+    if fault.traffic_weight <= 0 or fault.traffic_weight > 100:
+        raise ScenarioError("scenario.yaml 'fault.traffic_weight' must be between 1 and 100.")
 
     alert_raw = _section(document, "alert")
     time_range = alert_raw.get("expected_time_to_fire_minutes", [1, 6])
@@ -122,7 +128,12 @@ def parse_scenario_definition(document: dict[str, Any], *, slug: str) -> Scenari
         expected_time_to_fire_minutes=(int(time_range[0]), int(time_range[1])),
         max_wait_seconds=float(alert_raw.get("max_wait_seconds", 480.0)),
         poll_interval_seconds=float(alert_raw.get("poll_interval_seconds", 15.0)),
+        target_resource=str(alert_raw.get("target_resource", "container_app")),
     )
+    if alert.target_resource not in {"container_app", "app_insights"}:
+        raise ScenarioError(
+            "scenario.yaml 'alert.target_resource' must be 'container_app' or 'app_insights'."
+        )
 
     load_raw = _section(document, "load")
     load = LoadDefinition(
@@ -130,6 +141,7 @@ def parse_scenario_definition(document: dict[str, Any], *, slug: str) -> Scenari
         concurrency=int(load_raw.get("concurrency", 4)),
         request_timeout_seconds=float(load_raw.get("request_timeout_seconds", 15.0)),
         min_failures_required=int(_require(load_raw, "min_failures_required")),
+        duration_seconds=float(load_raw.get("duration_seconds", 0.0)),
     )
 
     incident_raw = _section(document, "incident")

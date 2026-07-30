@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -24,7 +25,8 @@ from labctl.config import Config
 from labctl.http_client import HttpResult
 from labctl.http_client import get as http_get
 from labctl.http_client import post as http_post
-from labctl.load import generate_checkout_load
+from labctl.load import generate_checkout_load, generate_checkout_load_for
+from labctl.procutil import CommandResult
 from labctl.scenario_definition import (
     ScenarioDefinition,
     ScenarioError,
@@ -76,6 +78,7 @@ _RECOVERY_CANARY_MIN_REQUESTS = 6
 _RECOVERY_CANARY_CONCURRENCY = 2
 _RECOVERY_TELEMETRY_TIMEOUT_SECONDS = 120.0
 _RECOVERY_TELEMETRY_POLL_SECONDS = 10.0
+_PARTIAL_FAULT_PROBE_MIN_REQUESTS = 60
 
 
 def _fault_revision_suffix(container_app_name: str, prefix: str, image_tag: str, epoch: int) -> str:
@@ -279,6 +282,26 @@ def _alert_matches(alert: dict[str, Any], alert_name: str) -> bool:
     return not rule or alert_name.lower() in rule.lower()
 
 
+def _alert_target_resource_id(
+    workload_context: ctx.WorkloadContext, scenario: ScenarioDefinition
+) -> str:
+    if scenario.alert.target_resource == "app_insights":
+        return workload_context.app_insights_resource_id
+    return workload_context.container_app_id
+
+
+def _list_matching_alerts(
+    account: Account, workload_context: ctx.WorkloadContext, scenario: ScenarioDefinition
+) -> tuple[list[dict[str, Any]] | None, CommandResult]:
+    alerts, result = workload_azure.list_fired_alerts(
+        account.subscription_id,
+        target_resource_id=_alert_target_resource_id(workload_context, scenario),
+    )
+    if alerts is None:
+        return None, result
+    return [alert for alert in alerts if _alert_matches(alert, scenario.alert.name)], result
+
+
 def _monitor_condition(alert: dict[str, Any]) -> str:
     essentials = alert.get("properties", {}).get("essentials", {})
     if not isinstance(essentials, dict):
@@ -289,26 +312,23 @@ def _monitor_condition(alert: dict[str, Any]) -> str:
 def _check_alert_not_firing(
     account: Account, workload_context: ctx.WorkloadContext, scenario: ScenarioDefinition
 ) -> CheckResult:
-    alerts, result = workload_azure.list_fired_alerts(
-        account.subscription_id, target_resource_id=workload_context.container_app_id
-    )
+    alerts, result = _list_matching_alerts(account, workload_context, scenario)
     if alerts is None:
         return CheckResult(
             "alert-not-firing",
             Status.FAIL,
             f"could not query alert instances: {result.diagnostic()}",
         )
-    matching = [alert for alert in alerts if _alert_matches(alert, scenario.alert.name)]
-    fired = [alert for alert in matching if _monitor_condition(alert) == "Fired"]
+    fired = [alert for alert in alerts if _monitor_condition(alert) == "Fired"]
     if fired:
         return CheckResult(
             "alert-not-firing",
             Status.WARN,
-            "checkout canary and telemetry are below threshold, but Azure Monitor still shows "
-            "the alert in Fired state; auto-resolution is pending.",
+            f"checkout canary and telemetry are below threshold, but Azure Monitor still shows "
+            f"{scenario.alert.name!r} in Fired state; auto-resolution is pending.",
         )
-    if matching:
-        conditions = sorted({_monitor_condition(alert) or "Unknown" for alert in matching})
+    if alerts:
+        conditions = sorted({_monitor_condition(alert) or "Unknown" for alert in alerts})
         return CheckResult(
             "alert-not-firing",
             Status.PASS,
@@ -554,11 +574,21 @@ def run_demo_trigger(
                 echo, f"revision {fault_revision_name!r} did not reach Provisioned in time."
             )
 
-    echo(f"[2/4] Shifting 100% of traffic from {baseline!r} to {fault_revision_name!r}.")
+    fault_weight = scenario.fault.traffic_weight
+    baseline_weight = 100 - fault_weight
+    target_weights = (
+        {fault_revision_name: 100}
+        if fault_weight == 100
+        else {baseline: baseline_weight, fault_revision_name: fault_weight}
+    )
+    echo(
+        f"[2/4] Setting traffic split: {baseline!r}={baseline_weight}%, "
+        f"{fault_revision_name!r}={fault_weight}%."
+    )
     traffic_result = workload_azure.containerapp_ingress_traffic_set(
         workload_context.container_app_name,
         workload_context.workload_resource_group,
-        {fault_revision_name: 100},
+        target_weights,
     )
     if not traffic_result.ok:
         return _fail(echo, f"could not shift traffic: {traffic_result.diagnostic()}")
@@ -581,24 +611,88 @@ def run_demo_trigger(
 
     url = workload_context.endpoint_url()
     confirm = http_post(f"{url}/api/checkout", timeout=15.0, retries=2)
-    if confirm.ok and confirm.status_code >= 500:
+    if fault_weight == 100 and confirm.ok and confirm.status_code >= 500:
         echo(f"  confirmed: POST {url}/api/checkout -> HTTP {confirm.status_code}")
+    elif fault_weight < 100:
+        echo(
+            f"  sampled mixed-traffic checkout returned {_describe_http(confirm)} "
+            f"(expected to be ambiguous with only {fault_weight}% on the canary)."
+        )
     else:
         echo(
             f"  warning: expected HTTP >=500 from the fault revision, got {_describe_http(confirm)}"
         )
 
-    echo(
-        f"[3/4] Generating synthetic checkout load "
-        f"({scenario.load.request_count} requests, concurrency={scenario.load.concurrency})."
-    )
-    load_result = generate_checkout_load(
-        f"{url}/api/checkout",
-        count=scenario.load.request_count,
-        concurrency=scenario.load.concurrency,
-        timeout=scenario.load.request_timeout_seconds,
-    )
-    echo(f"  {load_result.summary()}")
+    if scenario.load.duration_seconds > 0:
+        echo(
+            f"[3/4] Generating sustained synthetic checkout load "
+            f"(duration={scenario.load.duration_seconds:.0f}s, "
+            f"concurrency={scenario.load.concurrency})."
+        )
+        echo(
+            f"  Sustaining mixed traffic for {scenario.load.duration_seconds:.0f}s while "
+            "Azure Monitor evaluates."
+        )
+    else:
+        echo(
+            f"[3/4] Generating synthetic checkout load "
+            f"({scenario.load.request_count} requests, concurrency={scenario.load.concurrency})."
+        )
+    load_started = time.monotonic()
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        load_future = (
+            pool.submit(
+                generate_checkout_load_for,
+                f"{url}/api/checkout",
+                duration_seconds=scenario.load.duration_seconds,
+                concurrency=scenario.load.concurrency,
+                timeout=scenario.load.request_timeout_seconds,
+                target_count=scenario.load.request_count,
+            )
+            if scenario.load.duration_seconds > 0
+            else pool.submit(
+                generate_checkout_load,
+                f"{url}/api/checkout",
+                count=scenario.load.request_count,
+                concurrency=scenario.load.concurrency,
+                timeout=scenario.load.request_timeout_seconds,
+            )
+        )
+
+        echo(
+            f"[4/4] Polling the real alert '{scenario.alert.name}' for up to "
+            f"{scenario.alert.max_wait_seconds:.0f}s (evaluates every ~1 minute)."
+        )
+        start = time.monotonic()
+        fired = False
+        reported_fired = False
+        while time.monotonic() - start < scenario.alert.max_wait_seconds:
+            alerts, result = _list_matching_alerts(account, workload_context, scenario)
+            if alerts is None:
+                echo(f"  warning: could not query alert instances: {result.diagnostic()}")
+            elif any(_monitor_condition(alert) == "Fired" for alert in alerts):
+                fired = True
+                if (
+                    scenario.load.duration_seconds > 0
+                    and not load_future.done()
+                    and not reported_fired
+                ):
+                    reported_fired = True
+                    echo(
+                        f"  Alert '{scenario.alert.name}' entered Fired state after "
+                        f"{time.monotonic() - start:.0f}s; continuing sustained traffic."
+                    )
+                else:
+                    break
+            if fired and load_future.done():
+                break
+            sleep(scenario.alert.poll_interval_seconds)
+
+        load_result = load_future.result()
+
+    elapsed = time.monotonic() - start
+    load_elapsed = time.monotonic() - load_started
+    echo(f"  {load_result.summary()} (wall clock {load_elapsed:.0f}s)")
     if load_result.failed < scenario.load.min_failures_required:
         return _fail(
             echo,
@@ -607,29 +701,6 @@ def run_demo_trigger(
             "fault revision may not actually be serving traffic yet.",
         )
 
-    echo(
-        f"[4/4] Polling the real alert '{scenario.alert.name}' for up to "
-        f"{scenario.alert.max_wait_seconds:.0f}s (evaluates every ~1 minute)."
-    )
-    start = time.monotonic()
-    fired = False
-    while time.monotonic() - start < scenario.alert.max_wait_seconds:
-        alerts, result = workload_azure.list_fired_alerts(
-            account.subscription_id, target_resource_id=workload_context.container_app_id
-        )
-        if alerts is None:
-            echo(f"  warning: could not query alert instances: {result.diagnostic()}")
-        else:
-            for alert in alerts:
-                essentials = alert.get("properties", {}).get("essentials", {})
-                if essentials.get("monitorCondition") == "Fired":
-                    fired = True
-                    break
-        if fired:
-            break
-        sleep(scenario.alert.poll_interval_seconds)
-
-    elapsed = time.monotonic() - start
     if fired:
         echo(f"  Alert '{scenario.alert.name}' entered Fired state after {elapsed:.0f}s.")
         current_state = load_scenario_state(config, slug)
@@ -699,23 +770,57 @@ def run_demo_verify(config: Config, slug: str, *, echo: Echo = print) -> DemoRes
     results: list[CheckResult] = []
 
     if phase == "fault":
-        checkout = http_post(f"{url}/api/checkout", timeout=15.0, retries=2)
-        if checkout.ok and checkout.status_code >= 500:
-            results.append(
-                CheckResult(
-                    "checkout-returns-500",
-                    Status.PASS,
-                    f"POST /api/checkout -> HTTP {checkout.status_code}.",
-                )
+        if scenario.fault.traffic_weight < 100:
+            probe_count = min(
+                scenario.load.request_count,
+                max(_PARTIAL_FAULT_PROBE_MIN_REQUESTS, scenario.load.min_failures_required * 10),
             )
+            probe = generate_checkout_load(
+                f"{url}/api/checkout",
+                count=probe_count,
+                concurrency=min(max(scenario.load.concurrency, 1), 8),
+                timeout=scenario.load.request_timeout_seconds,
+            )
+            if (
+                probe.failed >= scenario.load.min_failures_required
+                and probe.succeeded > 0
+                and probe.failed < probe.total
+            ):
+                results.append(
+                    CheckResult(
+                        "partial-checkout-degradation",
+                        Status.PASS,
+                        f"{probe.summary()}; mixed success/failure confirms partial impact.",
+                    )
+                )
+            else:
+                results.append(
+                    CheckResult(
+                        "partial-checkout-degradation",
+                        Status.FAIL,
+                        f"{probe.summary()}; expected at least "
+                        f"{scenario.load.min_failures_required} failures and at least one success "
+                        "while the canary carries a small traffic slice.",
+                    )
+                )
         else:
-            results.append(
-                CheckResult(
-                    "checkout-returns-500",
-                    Status.FAIL,
-                    f"expected HTTP >=500, got {_describe_http(checkout)}.",
+            checkout = http_post(f"{url}/api/checkout", timeout=15.0, retries=2)
+            if checkout.ok and checkout.status_code >= 500:
+                results.append(
+                    CheckResult(
+                        "checkout-returns-500",
+                        Status.PASS,
+                        f"POST /api/checkout -> HTTP {checkout.status_code}.",
+                    )
                 )
-            )
+            else:
+                results.append(
+                    CheckResult(
+                        "checkout-returns-500",
+                        Status.FAIL,
+                        f"expected HTTP >=500, got {_describe_http(checkout)}.",
+                    )
+                )
         non_baseline = {r: w for r, w in weights.items() if r != baseline and w > 0}
         if non_baseline:
             results.append(
@@ -733,12 +838,10 @@ def run_demo_verify(config: Config, slug: str, *, echo: Echo = print) -> DemoRes
             )
 
         state = load_scenario_state(config, slug)
-        alerts, alert_result = workload_azure.list_fired_alerts(
-            account.subscription_id, target_resource_id=workload_context.container_app_id
-        )
+        alerts, alert_result = _list_matching_alerts(account, workload_context, scenario)
         if alerts and any(
-            a.get("properties", {}).get("essentials", {}).get("monitorCondition") == "Fired"
-            for a in alerts
+            _monitor_condition(alert) == "Fired"
+            for alert in alerts
         ):
             results.append(CheckResult("alert-fired", Status.PASS, "alert is in Fired state."))
         elif state.alert_fired_at:
