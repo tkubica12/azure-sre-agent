@@ -218,7 +218,7 @@
           <ul>
             <li>ca-pulsemart-demo (Container App, multiple revisions)</li>
             <li>appi-pulsemart-demo, law-pulsemart-demo</li>
-            <li>crpulsemartdemo... (ACR), alert-pulsemart-checkout-5xx</li>
+            <li>crpulsemartdemo... (ACR), alert-pulsemart-containerapp-5xx</li>
           </ul>
         </div>
       </div>
@@ -425,7 +425,7 @@
       <div class="slide-body">
         <p class="lead">A controlled, reversible, production-like fault:
           a new Container Apps revision from the same immutable image, with
-          <code>DEMO_FAILURE_MODE=checkout-500</code>.</p>
+          <code>PAYMENT_GATEWAY_PROFILE=legacy-acquirer</code>.</p>
         <ul>
           <li class="fragment">Known-good and failing revisions run side by
             side - Multiple revision mode never removes the healthy one.</li>
@@ -474,7 +474,7 @@
           <li class="fragment">Application Insights shows exceptions and
             failed dependency calls tagged with the new revision.</li>
           <li class="fragment">The Azure Monitor alert
-            <code>alert-pulsemart-checkout-5xx</code> moves to Fired.</li>
+            <code>alert-pulsemart-containerapp-5xx</code> moves to Fired.</li>
         </ul>
       </div>
       <div class="notes" hidden>
@@ -492,8 +492,10 @@
         <ul>
           <li class="fragment">Incident management configuration: type
             <code>AzMonitor</code>.</li>
-          <li class="fragment">Response plan <code>checkout-5xx</code>
-            filters to this alert's title and severity.</li>
+          <li class="fragment">Response plan <code>containerapp-5xx</code>
+            filters to this alert's title (contains "pulsemart") and
+            severity - it is a Container App-wide 5xx alert, not scoped to
+            checkout specifically; the agent has to determine that itself.</li>
           <li class="fragment">Subagent <code>incident-investigator</code>
             picks up the incident automatically.</li>
         </ul>
@@ -518,32 +520,41 @@
           just failed and it's recovering via Azure Resource Graph" is a good
           moment, not dead air.</p>
         <div class="callout" role="note">
-          <p><strong>Real excerpt, 2026-07-29</strong> (verbatim, full text
+          <p><strong>Real excerpt, 2026-07-30</strong> (verbatim, full text
             in the guide and <a href="../guide/index.html#beat-investigate">the
             evidence file</a>):</p>
-          <p class="fragment">"41 HTTP 5xx responses recorded ... aligning
-            precisely with when the fault revision started serving
-            traffic." ... "the <code>_charge_payment</code> function raises
-            <code>CheckoutFailure</code> ... the only code path that produces
-            the observed error message."</p>
-          <p class="fragment">"<strong>Confidence: High.</strong> All
-            evidence - timing, error message, env var, metrics spike, and
-            source code - converges on a single explanation."</p>
+          <p class="fragment">"Both revisions use the identical container
+            image. The only configuration difference is the
+            <code>PAYMENT_GATEWAY_PROFILE</code> environment variable:
+            <code>legacy-acquirer</code> on the fault revision vs.
+            <code>standard</code> on the baseline." ... "checkout failed:
+            upstream payment gateway returned HTTP 502 Bad Gateway while
+            authorizing the charge."</p>
+          <p class="fragment"><strong>Root Cause:</strong> "A
+            configuration-driven deployment regression... This is not a code
+            bug - it is a reversible configuration fault."</p>
         </div>
+        <p class="fragment">Honest caveat: this agent's own retained memory
+          still described the previous fault mechanism - it flagged that
+          itself and reasoned from live evidence instead. Details in the
+          guide.</p>
       </div>
       <div class="notes" hidden>
         <p>Read the real, live investigation from the portal every time -
           this excerpt is here so you know the calibre of evidence to expect
           and can quote it accurately, not as a substitute for watching it
-          happen live. Three real runs measured, not two: alert-to-report
-          took ~3-4 minutes on two runs and 6m23s on a third, rebuilt-
-          environment run - a real, root-caused result (failed CLI calls
-          recovered via Resource Graph; the connected repo currently lacks
-          committed app source, so the agent leaned on operational knowledge
-          instead). See the guide's Investigate beat for exactly what to say
-          if this happens to you live. Full transcripts:
-          scenarios/bad-deployment/evidence/act-beat-transcript-2026-07-29.md
-          and PLAN.md's timing-drift record for the third run.</p>
+          happen live. Four real runs measured now, not three: alert-to-report
+          took ~4 minutes on two runs and 6-6.5 minutes on the other two - a
+          real, recurring pattern, not a one-off (root causes: occasional
+          failed CLI calls recovered via Resource Graph; the connected repo's
+          committed source does not contain the current fault mechanism
+          either, so the agent has to reconcile that mismatch every time).
+          See the guide's Investigate beat for exactly what to say if this
+          happens to you live, and for the honest memory-persistence caveat -
+          do not claim this was a completely clean-room diagnosis. Full
+          transcripts: scenarios/bad-deployment/evidence/act-beat-transcript-2026-07-30.md
+          (current fault mechanism) and the 2026-07-29 file/PLAN.md for the
+          three earlier runs under the previous mechanism.</p>
       </div>
     </section>
 
@@ -556,7 +567,8 @@
         <div class="card fragment">
           <h3>Operational context</h3>
           <ul>
-            <li>Checkout-500 runbook (uploaded knowledge)</li>
+            <li>PulseMart incident runbook - diagnostic method, not a named
+              answer (uploaded knowledge)</li>
             <li>Application Insights + Log Analytics connectors</li>
             <li>Revision and configuration history</li>
           </ul>
@@ -573,7 +585,10 @@
       <div class="notes" hidden>
         <p>This is the difference from a generic chatbot: every citation the
           agent makes traces back to one of these concrete, version
-          -controlled or Azure-native sources.</p>
+          -controlled or Azure-native sources. The runbook teaches method -
+          compare revisions, diff configuration, correlate telemetry, check
+          source - it does not name the fault, so the agent has to derive the
+          cause rather than confirm a label.</p>
       </div>
     </section>
 
@@ -584,10 +599,12 @@
       <h2 data-slide-title>From evidence to hypothesis</h2>
       <div class="slide-body">
         <p class="lead">The agent (as <code>incident-investigator</code>)
-          correlates the failure with the new revision and its
-          <code>DEMO_FAILURE_MODE</code> configuration change, and its
-          written findings recommend the exact fix: shift traffic back to
-          the known-good revision.</p>
+          diffs the traffic-carrying revision against the last known-good
+          one, finds the only difference is a
+          <code>PAYMENT_GATEWAY_PROFILE</code> configuration change, and
+          correlates that against telemetry and source - its written
+          findings recommend the exact fix: shift traffic back to the
+          known-good revision.</p>
         <p class="fragment">There is no platform hand-off to another agent -
           workspace mode rejects that outright. Its written recommendation is
           what drives <code>rollback-advisor</code> into action next, in the

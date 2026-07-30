@@ -128,7 +128,7 @@
 
   <rect class="box box--accent" x="700" y="478" width="190" height="46"></rect>
   <text class="node-title" x="795" y="498" text-anchor="middle">Azure Monitor alert</text>
-  <text class="node-sub" x="795" y="513" text-anchor="middle">alert-pulsemart-checkout-5xx</text>
+  <text class="node-sub" x="795" y="513" text-anchor="middle">alert-pulsemart-containerapp-5xx</text>
 
   <path class="edge" d="M870,456 L830,478"></path>
 
