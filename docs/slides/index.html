@@ -91,7 +91,7 @@
           <li class="fragment"><strong>Observe</strong> - the healthy application and its baseline telemetry</li>
           <li class="fragment"><strong>Disrupt</strong> - a controlled, reversible production-like fault</li>
           <li class="fragment"><strong>Investigate</strong> - the agent correlates resources, logs, metrics, source, and knowledge</li>
-          <li class="fragment"><strong>Act</strong> - the agent recommends a fix; a human runs the one command; the Activity Log proves who did it</li>
+          <li class="fragment"><strong>Act</strong> - the agent executes the fix itself under its own managed identity; the Activity Log proves which identity did it</li>
           <li class="fragment"><strong>Verify</strong> - proof of recovery, from the user and from telemetry</li>
           <li class="fragment"><strong>Learn</strong> - the incident record, audit evidence, and automation opportunities</li>
         </ol>
@@ -123,8 +123,9 @@
     telemetry to Application Insights and Log Analytics, which feed an Azure
     Monitor alert. The alert reaches the Azure SRE Agent through the incident
     platform. The agent reads telemetry, the workload, and connected GitHub
-    source to investigate, and states a recommendation - it does not write to
-    the workload itself in this build. The full resource-by-resource topology
+    source to investigate, states a recommendation, and then executes the
+    traffic rollback itself under its own user-assigned managed identity. The
+    full resource-by-resource topology
     is in the presenter guide's architecture section, not on this slide.
   </desc>
   <defs>
@@ -683,12 +684,19 @@
         </ul>
       </div>
       <div class="notes" hidden>
-        <p>This is the reframed thesis of the whole safety story: capability
-          scoped this narrowly cannot be misused, whether or not a portal
-          approval prompt actually engages. The hooks stay configured as
-          documented intent, in case Microsoft fixes the platform defect -
-          but tool scoping plus narrow RBAC is what this demonstration
-          actually, provenly relies on.</p>
+        <p>This is the reframed thesis of the whole safety story: misuse is
+          bounded to a single Container App, whether or not a portal
+          approval prompt actually engages. Be precise if asked - bounded
+          is not the same as impossible. Container Apps Contributor does
+          include <code>Microsoft.App/containerApps/delete</code>, and the
+          write tool is a general Azure CLI tool rather than a
+          traffic-only action, so destructive mutation of that one app
+          remains technically possible. What the scoping buys is that
+          nothing outside that single resource is reachable, and
+          <code>labctl demo reset</code> restores it. The hooks stay
+          configured as documented intent, in case Microsoft fixes the
+          platform defect - but tool scoping plus narrow RBAC is what this
+          demonstration actually, provenly relies on.</p>
       </div>
     </section>
 
@@ -831,7 +839,170 @@
       </div>
     </section>
 
-    <!-- ======================= SEGMENT 7: ADOPTION GUIDANCE (2 min) ======================= -->
+    <!-- ======================= SEGMENT 7: OPTIONAL DEEPER SCENE - CANARY REGRESSION (~8 min if shown, not part of the core run) ======================= -->
+
+    <section class="slide" id="s-canary-intro" tabindex="-1">
+      <div class="slide-kicker">
+        <span class="chip chip--accent">Optional scene: Canary regression</span>
+      </div>
+      <h2 data-slide-title>Optional: what about partial failures?</h2>
+      <div class="slide-body">
+        <p class="lead">A second, optional scene - not a replacement for the
+          story you just watched. Run it only if there is time and the room
+          wants to see the agent handle ambiguity.</p>
+        <ul>
+          <li class="fragment">Same deployed environment, same agent - no
+            redeploy.</li>
+          <li class="fragment">Follows Learn, before Adoption guidance - or
+            skip straight to Adoption if time is short.</li>
+          <li class="fragment"><code>bad-deployment</code> is all-or-nothing;
+            this scene is not.</li>
+        </ul>
+      </div>
+      <div class="notes" hidden>
+        <p>Frame this explicitly as optional every time - do not treat it as
+          a required part of the run. Full presenter detail:
+          guide, "Optional deeper scene: Canary regression".</p>
+      </div>
+    </section>
+
+    <section class="slide" id="s-canary-contrast" tabindex="-1">
+      <div class="slide-kicker">
+        <span class="chip chip--accent">Optional scene: Canary regression</span>
+      </div>
+      <h2 data-slide-title>The contrast that justifies this scene</h2>
+      <div class="slide-body two-col">
+        <div class="card fragment">
+          <h3>bad-deployment</h3>
+          <ul>
+            <li>Total outage - 100% of checkout traffic</li>
+            <li>Unambiguous - every checkout fails</li>
+            <li>Blunt full rollback</li>
+          </ul>
+        </div>
+        <div class="card fragment">
+          <h3>canary-regression</h3>
+          <ul>
+            <li>Partial - about 10% of checkout traffic</li>
+            <li>Ambiguous - must attribute failures to the right revision</li>
+            <li>Targeted canary drain only</li>
+          </ul>
+        </div>
+      </div>
+      <div class="notes" hidden>
+        <p>Say this pairing out loud - it is the entire justification for
+          running this scene at all. Full mechanism/detection contrast table
+          is in the guide.</p>
+      </div>
+    </section>
+
+    <section class="slide" id="s-canary-trigger-live" tabindex="-1">
+      <div class="slide-kicker">
+        <span class="chip chip--accent">Optional scene: Canary regression</span>
+        <span class="chip chip--solid">Live</span>
+      </div>
+      <h2 data-slide-title>Live: introduce the canary</h2>
+      <div class="slide-body">
+        <pre class="command-block"><code>& 'labctl\.venv\Scripts\labctl.exe' demo trigger canary-regression</code></pre>
+        <ul>
+          <li class="fragment">New canary revision at just <strong>10%</strong>
+            traffic, baseline keeps the other 90%.</li>
+          <li class="fragment">Checkout will look mostly healthy in the
+            browser - that ambiguity is the point.</li>
+          <li class="fragment">Detected by a real Application Insights
+            <strong>scheduled query</strong> alert - a raw 5xx metric alert
+            is not reliable enough on a 10% blend.</li>
+        </ul>
+      </div>
+      <div class="notes" hidden>
+        <p>Exact expected trigger console output and fallback: guide,
+          Canary regression scene.</p>
+      </div>
+    </section>
+
+    <section class="slide" id="s-canary-investigation-live" tabindex="-1">
+      <div class="slide-kicker">
+        <span class="chip chip--accent">Optional scene: Canary regression</span>
+        <span class="chip chip--solid">Live</span>
+      </div>
+      <h2 data-slide-title>Live: disambiguating by revision</h2>
+      <div class="slide-body">
+        <p class="fragment">The agent's own words: <em>"partial canary
+          degradation, not a total outage."</em></p>
+        <table>
+          <thead><tr><th>Revision</th><th>Failure rate</th></tr></thead>
+          <tbody>
+            <tr class="fragment"><td>Baseline</td><td><strong>0%</strong> (340/340 succeeded)</td></tr>
+            <tr class="fragment"><td>Canary</td><td><strong>100%</strong> (38/38 failed)</td></tr>
+          </tbody>
+        </table>
+        <p class="fragment">Blast radius, in the agent's own words: <em>"~7-12%
+          per minute, consistent with the canary's 10% traffic weight."</em></p>
+      </div>
+      <div class="notes" hidden>
+        <p>This is the strongest single moment in this scene - lead with it.
+          Real, verbatim numbers from the 2026-07-30 transcript, quoted in
+          full in the guide. This per-revision partitioning is exactly what
+          bad-deployment cannot show, because it never has a healthy revision
+          to contrast against.</p>
+      </div>
+    </section>
+
+    <section class="slide" id="s-canary-drain-live" tabindex="-1">
+      <div class="slide-kicker">
+        <span class="chip chip--accent">Optional scene: Canary regression</span>
+        <span class="chip chip--solid">Live</span>
+      </div>
+      <h2 data-slide-title>Live: the targeted drain</h2>
+      <div class="slide-body">
+        <p>The agent's own words: <em>"Handing off to the rollback-advisor
+          subagent to drain the failing canary."</em></p>
+        <ul>
+          <li class="fragment">The command names both revisions and zeroes
+            only the canary - not a blunt "move everything back".</li>
+          <li class="fragment">Activity Log: the drain write is attributed to
+            the <strong>agent's own managed identity</strong>, distinct from
+            the operator's earlier trigger-time writes.</li>
+        </ul>
+      </div>
+      <div class="notes" hidden>
+        <p>Same proof pattern as the main Act beat's Activity Log moment, on a
+          more surgical action. Full command text and Activity Log table:
+          guide.</p>
+      </div>
+    </section>
+
+    <section class="slide" id="s-canary-verify-live" tabindex="-1">
+      <div class="slide-kicker">
+        <span class="chip chip--accent">Optional scene: Canary regression</span>
+        <span class="chip chip--solid">Live</span>
+      </div>
+      <h2 data-slide-title>Live: prove recovery, and a timing honesty note</h2>
+      <div class="slide-body">
+        <pre class="command-block"><code>& 'labctl\.venv\Scripts\labctl.exe' demo verify canary-regression</code></pre>
+        <ul>
+          <li class="fragment">Live-verified: <strong>5 passed, 0 warned,
+            0 failed</strong>, independent of the agent's own narrative.</li>
+          <li class="fragment">The agent's own summary lands ~2 minutes after
+            the drain; the Azure Monitor alert itself takes ~13 minutes to
+            auto-resolve - do not wait live for the alert if time is short.</li>
+          <li class="fragment">Honest caveat: this run's connected source
+            lagged the deployed image: the agent noticed and reasoned from
+            live telemetry instead - it did not demonstrate source-grounded
+            confirmation this time.</li>
+        </ul>
+      </div>
+      <div class="notes" hidden>
+        <p>Say the timing split plainly - narrating success and the alert
+          clearing are two different, real events, only one of which is fast.
+          The source-lag caveat pairs with the memory-persistence caveat from
+          the main Act beat - same honesty pattern, different mechanism.
+          <code>& 'labctl\.venv\Scripts\labctl.exe' demo reset
+          canary-regression</code> is the safe, repeatable reset.</p>
+      </div>
+    </section>
+
+    <!-- ======================= SEGMENT 8: ADOPTION GUIDANCE (2 min) ======================= -->
 
     <section class="slide" id="s-adopt" tabindex="-1">
       <div class="slide-kicker">

@@ -55,7 +55,7 @@ recorded on it.
 - The Container App runs in Multiple revision mode. `labctl` (not
   Terraform) creates new immutable revisions and moves traffic weights
   between them; Terraform's lifecycle rule ignores template/traffic changes
-  so it never fights an agent-approved rollback.
+  so it never fights an agent-executed rollback.
 - A revision suffix and image tag together identify exactly what code and
   configuration is running (`ca-pulsemart-demo--<suffix>`); correlate the
   active revision from `GET /api/status` or the Container App's traffic

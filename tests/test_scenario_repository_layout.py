@@ -123,3 +123,51 @@ def test_tracked_files_contain_no_obvious_secrets_or_live_azure_ids() -> None:
                     assert False, f"possible {label} in tracked file {path}"
         for label, identifier in local_identifiers:
             assert identifier not in data, f"live {label} appears in tracked file {path}"
+
+
+#: Phrases that were true of an earlier build and are now false. The agent
+#: executes its own remediation (the checkout-5xx response plan runs in
+#: Autonomous mode because Review mode's Approve/Deny gate provably does not
+#: engage in this preview), and its authority is *bounded* to a single
+#: Container App rather than incapable of misuse. Two independent review
+#: rounds found these exact strings surviving in slide agenda text and in SVG
+#: `<desc>` accessibility copy after the prose around them had been corrected,
+#: so they are asserted against here rather than left to reviewer diligence.
+FORBIDDEN_NARRATIVE_PHRASES = (
+    b"a human runs the one command",
+    b"does not write to the workload itself",
+    b"cannot be misused",
+    b"agent-approved rollback",
+    b"approval obtained",
+)
+
+#: Directories whose contents are historical records rather than current
+#: claims: captured agent transcripts quote what the agent actually said at
+#: the time, and PLAN.md records the investigation that established the
+#: platform limitation. Rewriting either to satisfy this check would destroy
+#: the evidence trail.
+NARRATIVE_CHECK_EXEMPT_PARTS = frozenset({"evidence"})
+NARRATIVE_CHECK_EXEMPT_FILES = frozenset({"PLAN.md", Path(__file__).name})
+
+
+def test_tracked_files_contain_no_superseded_remediation_claims() -> None:
+    """Presenter content and agent-loaded content must not claim a human
+    executes the remediation, nor that the agent's capability cannot be
+    misused (see SPEC.md section 5: the agent executes the rollback itself,
+    and Container Apps Contributor still includes
+    `Microsoft.App/containerApps/delete` on the one app in scope).
+    """
+
+    for path in _tracked_paths():
+        relative = path.relative_to(REPO_ROOT)
+        if NARRATIVE_CHECK_EXEMPT_PARTS & set(relative.parts):
+            continue
+        if relative.name in NARRATIVE_CHECK_EXEMPT_FILES:
+            continue
+        lowered = path.read_bytes().lower()
+        for phrase in FORBIDDEN_NARRATIVE_PHRASES:
+            assert phrase not in lowered, (
+                f"superseded remediation claim {phrase.decode()!r} in tracked file "
+                f"{relative.as_posix()}; the agent executes the rollback itself and its "
+                "authority is bounded rather than incapable of misuse"
+            )

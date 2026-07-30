@@ -38,6 +38,7 @@
       <li><a href="#beat-act">5. Act</a></li>
       <li><a href="#beat-verify">6. Verify</a></li>
       <li><a href="#beat-learn">7. Learn</a></li>
+      <li><a href="#scene-canary-regression">Optional: Canary regression</a></li>
     </ul>
     <h2>Reference</h2>
     <ul>
@@ -59,7 +60,13 @@
         Follow it top to bottom during rehearsal and during the live
         session. It matches the exact scene order in
         <a href="../../SPEC.md">SPEC.md</a> section 5 and the current
-        <a href="../../labctl/src/labctl/cli.py">labctl</a> command surface.</p>
+        <a href="../../labctl/src/labctl/cli.py">labctl</a> command surface.
+        Two incident scenarios are available:
+        <code>bad-deployment</code> (the primary, required story - Orient
+        through Learn below) and the optional, deeper
+        <a href="#scene-canary-regression">canary-regression</a> scene for
+        audiences who want to see the agent handle an ambiguous, partial
+        failure. Run <code>demo list</code> at any time to see both.</p>
       <p>Environment used throughout this guide (illustrative values -
         substitute your own subscription, tenant, and resource names before
         rehearsing; every ID shown here is a placeholder, not a real
@@ -134,7 +141,14 @@
             your check count differs, the agent/workload configuration has
             changed since this figure was recorded - read every non-PASS
             line before proceeding; do not rehearse against a known-bad
-            baseline.</p>
+            baseline. Two scenarios exist now
+            (<code>& 'labctl\.venv\Scripts\labctl.exe' demo list</code> shows
+            both); <code>demo verify bad-deployment</code> and
+            <code>demo verify canary-regression</code> each independently
+            report <strong>5 passed, 0 warned, 0 failed</strong> when their
+            respective baselines are healthy. Only prepare
+            <code>canary-regression</code> ahead of time if you actually plan
+            to run that optional scene.</p>
         </li>
         <li>
           <p><strong>Reset the scenario to a clean baseline.</strong></p>
@@ -959,6 +973,208 @@
         </div>
         <div>
           <h3>Transition cue</h3>
+          <p>If the room has time and appetite for more - "what about
+            partial failures?" - move to the optional
+            <a href="#scene-canary-regression">Canary regression</a> scene
+            next. Otherwise move straight to
+            <a href="#adoption">Adoption guidance</a> to close.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= OPTIONAL SCENE: CANARY REGRESSION ================= -->
+    <section id="scene-canary-regression" class="beat">
+      <h2>Optional deeper scene: Canary regression<a class="anchor-link" href="#scene-canary-regression">#</a></h2>
+      <div class="beat-meta">
+        <span class="chip chip--accent">~8 min if shown - not part of the 36-min core run</span>
+        <span class="chip">Reuses the same deployed environment - no redeploy</span>
+      </div>
+      <div class="beat-grid">
+        <div>
+          <h3>When to run this, and when to skip it</h3>
+          <p>This is a <strong>second, optional</strong> scene, not a
+            replacement for the primary <code>bad-deployment</code> story.
+            Run it only if the room has time and either asks "what about
+            partial failures?" or you judge the audience wants to see the
+            agent handle ambiguity rather than an unambiguous total outage.
+            It is safe to skip entirely - the core narrative (Orient through
+            Learn) is already complete without it. If you do run it, it
+            follows <a href="#beat-learn">Learn</a> and precedes
+            <a href="#adoption">Adoption guidance</a>. It reuses the exact
+            same agent, workload, and Azure resources already deployed for
+            <code>bad-deployment</code> - no redeploy, no new environment.</p>
+        </div>
+        <div>
+          <h3>Why this scene exists</h3>
+          <p><code>bad-deployment</code> is deliberately all-or-nothing: 100%
+            of traffic moves to a broken revision, everything fails, the
+            agent rolls everything back. That is clean, but it cannot show
+            the agent handling <strong>ambiguity</strong>.
+            <code>canary-regression</code> puts the same class of
+            configuration regression on a canary revision carrying only
+            about <strong>10% of production traffic</strong>. Most users stay
+            healthy. The signal is partial and ambiguous - an elevated error
+            rate, not an outage - and the agent has to disambiguate it by
+            Container App revision before it can act correctly.</p>
+        </div>
+        <div>
+          <h3>The contrast that justifies this scene existing</h3>
+          <table>
+            <thead><tr><th></th><th><code>bad-deployment</code></th><th><code>canary-regression</code></th></tr></thead>
+            <tbody>
+              <tr><td>Blast radius</td><td>Total outage - 100% of checkout traffic</td><td>Partial - about 10% of checkout traffic</td></tr>
+              <tr><td>Signal</td><td>Unambiguous - every checkout fails</td><td>Ambiguous - most checkouts still succeed; the agent must attribute failures to the right revision</td></tr>
+              <tr><td>Fault mechanism</td><td><code>PAYMENT_GATEWAY_PROFILE=legacy-acquirer</code> on 100% of traffic</td><td><code>CHECKOUT_PRICING_PROFILE=strict-decimal</code> on a 10% canary only</td></tr>
+              <tr><td>Detection</td><td>Real Container App <code>5xx</code> metric alert</td><td>Real Application Insights <strong>scheduled query</strong> alert on checkout failure rate - a metric alert on a 10% blend is not reliable enough to fire</td></tr>
+              <tr><td>Remediation</td><td>Blunt full rollback - shift 100% traffic back to baseline</td><td><strong>Targeted</strong> canary drain - shift only the canary's 10% back to baseline, leaving the rest of production traffic undisturbed the whole time</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div>
+          <h3>Prerequisites</h3>
+          <ul>
+            <li><code>labctl verify</code> and
+              <code>demo verify bad-deployment</code> report zero failures -
+              the new scene did not regress the first one.</li>
+            <li>You are running from the repository root:
+              <code>& 'labctl\.venv\Scripts\labctl.exe' &lt;command&gt;</code>.</li>
+          </ul>
+          <pre><code>& 'labctl\.venv\Scripts\labctl.exe' demo prepare canary-regression</code></pre>
+          <p><strong>Expected:</strong> restores 100% traffic to the recorded
+            baseline revision and confirms <code>/healthz</code> and
+            <code>/api/checkout</code> are healthy before any canary traffic
+            is added.</p>
+        </div>
+        <div>
+          <h3>Live: trigger the canary</h3>
+          <pre><code>& 'labctl\.venv\Scripts\labctl.exe' demo trigger canary-regression</code></pre>
+          <p><strong>Expected visible state:</strong> a new canary revision is
+            created from the baseline image with
+            <code>CHECKOUT_PRICING_PROFILE=strict-decimal</code>, traffic
+            splits 90% baseline / 10% canary, and sustained mixed checkout
+            traffic runs while the real
+            <code>alert-pulsemart-canary-regression</code> alert evaluates.
+            Checkout in the browser will look mostly healthy during this
+            stage - that ambiguity is the point; most requests still land on
+            the healthy 90%.</p>
+        </div>
+        <div>
+          <h3>Live: the agent disambiguates by revision - the strongest moment</h3>
+          <p>Narrate the incident thread. The agent should explicitly frame
+            this as <strong>"partial canary degradation, not a total
+            outage"</strong>, then query Application Insights/Log Analytics
+            grouped by Container App revision. This is the real,
+            verbatim per-revision breakdown from the live 2026-07-30 run
+            (<a href="../../scenarios/canary-regression/evidence/act-beat-transcript-2026-07-30.md">full
+            transcript</a>):</p>
+          <table>
+            <thead><tr><th>Revision</th><th>Total requests</th><th>Failed</th><th>Succeeded</th><th>Failure rate</th></tr></thead>
+            <tbody>
+              <tr><td>Baseline</td><td>340</td><td>0</td><td>340</td><td><strong>0%</strong></td></tr>
+              <tr><td>Canary</td><td>38</td><td>38</td><td>0</td><td><strong>100%</strong></td></tr>
+            </tbody>
+          </table>
+          <p>The agent's own quantified blast radius: <em>"Overall observed
+            failure rate: ~7-12% per minute, consistent with the canary's 10%
+            traffic weight."</em> This per-revision partitioning - not a
+            single aggregate failure rate - is the capability
+            <code>bad-deployment</code> cannot demonstrate, because it never
+            has a healthy revision to contrast against.</p>
+        </div>
+        <div>
+          <h3>Live: the targeted drain, not a blunt rollback</h3>
+          <p>The agent's own words: <em>"Investigation complete. Handing off
+            to the <code>rollback-advisor</code> subagent to drain the failing
+            canary."</em> Watch for the specific command - it names both
+            revisions and only zeroes the canary:</p>
+          <pre><code>az containerapp ingress traffic set --name ca-pulsemart-demo --resource-group rg-sre-agent-workload-demo --revision-weight &lt;baseline&gt;=100 &lt;canary&gt;=0</code></pre>
+          <p><strong>Expected visible state:</strong> traffic shifts to 100%
+            baseline / 0% canary - a targeted correction, not the blunt "move
+            everything back" rollback from <code>bad-deployment</code>. Then
+            open the Azure Activity Log for
+            <code>rg-sre-agent-workload-demo</code>: the drain write lands at
+            a timestamp attributed to the <strong>agent's own managed
+            identity</strong>, not the presenter's - the same proof pattern as
+            the Act beat, on a different, targeted action. In the live run,
+            two earlier writes at trigger time were attributed to the
+            operator (setting up the canary split), and the drain write ten
+            minutes later was attributed to the agent - the two are clearly
+            distinguishable by <code>caller</code> alone.</p>
+        </div>
+        <div>
+          <h3>Real measured timing - one run so far</h3>
+          <table>
+            <thead><tr><th>Phase</th><th>Measured</th></tr></thead>
+            <tbody>
+              <tr><td>Trigger -> alert Fired</td><td>133 s</td></tr>
+              <tr><td>Alert -> incident thread</td><td>79 s</td></tr>
+              <tr><td>Thread -> investigation report</td><td>338 s</td></tr>
+              <tr><td>Report -> agent executes the targeted drain</td><td>62 s</td></tr>
+              <tr><td>Drain -> agent's own resolution summary</td><td>128 s</td></tr>
+              <tr><td>Drain -> alert Resolved</td><td>781 s</td></tr>
+            </tbody>
+          </table>
+          <p><strong>The last two rows are different things - do not conflate
+            them.</strong> The agent narrates success (drain -> resolution
+            summary) in about <strong>2 minutes</strong>; the Azure Monitor
+            alert itself does not clear (drain -> Resolved) for about
+            <strong>13 minutes</strong>. <code>scenario.yaml</code> declares
+            this scene at <strong>20 minutes</strong> (versus 15 for
+            <code>bad-deployment</code>) for exactly this reason. Only one
+            real run has been measured so far - treat this as a single data
+            point, not yet a range, and budget for it to be slower live.</p>
+          <p><strong>Practical guidance:</strong> plan to move on right after
+            the agent's own resolution summary (~2 minutes after the drain) -
+            do not wait live for the alert to auto-resolve unless you have
+            time to spare. If you want to show the resolved alert, trigger
+            this scene early and check back on it after other beats, rather
+            than waiting on stage.</p>
+        </div>
+        <div>
+          <h3>Live: verify recovery</h3>
+          <pre><code>& 'labctl\.venv\Scripts\labctl.exe' demo verify canary-regression</code></pre>
+          <p><strong>Expected:</strong> fails while the canary still carries
+            traffic; passes once traffic is 100% on baseline, a fresh
+            checkout batch succeeds, recent Application Insights telemetry
+            for the baseline revision is present, and the alert is no longer
+            Fired. Live-verified: <strong>5 passed, 0 warned, 0 failed</strong>,
+            independent of the agent's own narrative.</p>
+        </div>
+        <div class="callout" role="note">
+          <p><strong>Honest caveat: source-grounding was not demonstrated on
+            this run.</strong> The deployed image for this validation cycle
+            was built from local working-tree changes, not yet committed and
+            pushed - so the connected GitHub source still reflected the prior
+            committed state. The agent noticed that mismatch itself and still
+            reached the correct conclusion from live telemetry and revision
+            configuration - the same honest pattern as the memory-persistence
+            caveat in the <a href="#beat-investigate">Investigate</a> beat: it
+            did not blindly trust a source it could not confirm. But that also
+            means <strong>this specific run did not demonstrate source-
+            grounded confirmation for this scene</strong> - do not claim it
+            did. Source-grounding for this scene is expected to be strongest
+            once these changes are committed and pushed; say exactly that, not
+            more.</p>
+        </div>
+        <div>
+          <h3>Fallback</h3>
+          <p>If the alert has not fired within <code>alert.max_wait_seconds</code>
+            (600s / 10 min), <code>demo trigger</code> still exits 0 as long
+            as the observed failure count is genuine - the fault is live
+            either way. If the agent has not executed the targeted drain
+            within a few minutes of a clear investigation conclusion, run
+            <code>demo reset canary-regression</code> yourself as the
+            operator safety net (exactly as with <code>bad-deployment</code>)
+            and narrate that explicitly as a fallback, not the intended path.</p>
+        </div>
+        <div>
+          <h3>Reset (safe to run repeatedly)</h3>
+          <pre><code>& 'labctl\.venv\Scripts\labctl.exe' demo reset canary-regression</code></pre>
+          <p>Restores 100% traffic to the recorded baseline and keeps the
+            canary revision drained.</p>
+        </div>
+        <div>
+          <h3>Transition cue</h3>
           <p>Move to <a href="#adoption">Adoption guidance</a> to close.</p>
         </div>
       </div>
@@ -1424,8 +1640,18 @@
           - the operator-facing runbook this guide's Disrupt/Investigate/Act
           beats are synchronized with.</li>
         <li><a href="../../scenarios/bad-deployment/evidence/act-beat-transcript-2026-07-29.md">scenarios/bad-deployment/evidence/act-beat-transcript-2026-07-29.md</a>
-          - the real, verbatim, two-run transcript and Activity Log evidence
-          the Investigate and Act beats quote from.</li>
+          - the real, verbatim, three-run transcript and Activity Log
+          evidence the Investigate and Act beats quote from (earlier fault
+          mechanism).</li>
+        <li><a href="../../scenarios/bad-deployment/evidence/act-beat-transcript-2026-07-30.md">scenarios/bad-deployment/evidence/act-beat-transcript-2026-07-30.md</a>
+          - the current fault mechanism's real transcript, quoted in the
+          Investigate and Act beats.</li>
+        <li><a href="../../scenarios/canary-regression/runbook/README.md">scenarios/canary-regression/runbook/README.md</a>
+          - the operator-facing runbook for the optional
+          <a href="#scene-canary-regression">Canary regression</a> scene.</li>
+        <li><a href="../../scenarios/canary-regression/evidence/act-beat-transcript-2026-07-30.md">scenarios/canary-regression/evidence/act-beat-transcript-2026-07-30.md</a>
+          - the real, verbatim transcript the Canary regression scene quotes
+          from.</li>
       </ul>
       <h3>Official Azure SRE Agent documentation</h3>
       <ul>
