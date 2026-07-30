@@ -986,7 +986,7 @@
     <section id="scene-canary-regression" class="beat">
       <h2>Optional deeper scene: Canary regression<a class="anchor-link" href="#scene-canary-regression">#</a></h2>
       <div class="beat-meta">
-        <span class="chip chip--accent">~8 min if shown - not part of the 36-min core run</span>
+        <span class="chip chip--accent">~12-20 min if shown - not part of the 36-min core run</span>
         <span class="chip">Reuses the same deployed environment - no redeploy</span>
       </div>
       <div class="beat-grid">
@@ -994,15 +994,22 @@
           <h3>When to run this, and when to skip it</h3>
           <p>This is a <strong>second, optional</strong> scene, not a
             replacement for the primary <code>bad-deployment</code> story.
-            Run it only if the room has time and either asks "what about
-            partial failures?" or you judge the audience wants to see the
-            agent handle ambiguity rather than an unambiguous total outage.
-            It is safe to skip entirely - the core narrative (Orient through
-            Learn) is already complete without it. If you do run it, it
-            follows <a href="#beat-learn">Learn</a> and precedes
+            Run it only if the room has a genuine <strong>12-20 minutes</strong>
+            to spare and either asks "what about partial failures?" or you
+            judge the audience wants to see the agent handle ambiguity rather
+            than an unambiguous total outage - this is a real time commitment,
+            not a quick add-on; do not start it with less time left than
+            that. It is safe to skip entirely - the core narrative (Orient
+            through Learn) is already complete without it. If you do run it,
+            it follows <a href="#beat-learn">Learn</a> and precedes
             <a href="#adoption">Adoption guidance</a>. It reuses the exact
             same agent, workload, and Azure resources already deployed for
-            <code>bad-deployment</code> - no redeploy, no new environment.</p>
+            <code>bad-deployment</code> - no redeploy, no new environment. The
+            two scenarios cannot run concurrently on this shared environment
+            (both set traffic weights on the same Container App), so this
+            scene must be triggered fresh, live, after <code>bad-deployment</code>
+            has already been reset - there is no shortcut that lets you
+            pre-stage it earlier in the session.</p>
         </div>
         <div>
           <h3>Why this scene exists</h3>
@@ -1019,6 +1026,15 @@
         </div>
         <div>
           <h3>The contrast that justifies this scene existing</h3>
+          <p>The contrast is in the <strong>reasoning</strong>, not in the
+            control-plane command - both scenes ultimately run the same
+            shape of <code>az containerapp ingress traffic set</code> call
+            (good revision to 100%, suspect revision to 0%). Do not present
+            this scene as demonstrating a fundamentally different kind of
+            action; it demonstrates a fundamentally different kind of
+            <strong>diagnosis</strong>, followed by a minimal,
+            evidence-proportionate mitigation sized to what was actually
+            found broken.</p>
           <table>
             <thead><tr><th></th><th><code>bad-deployment</code></th><th><code>canary-regression</code></th></tr></thead>
             <tbody>
@@ -1026,7 +1042,8 @@
               <tr><td>Signal</td><td>Unambiguous - every checkout fails</td><td>Ambiguous - most checkouts still succeed; the agent must attribute failures to the right revision</td></tr>
               <tr><td>Fault mechanism</td><td><code>PAYMENT_GATEWAY_PROFILE=legacy-acquirer</code> on 100% of traffic</td><td><code>CHECKOUT_PRICING_PROFILE=strict-decimal</code> on a 10% canary only</td></tr>
               <tr><td>Detection</td><td>Real Container App <code>5xx</code> metric alert</td><td>Real Application Insights <strong>scheduled query</strong> alert on checkout failure rate - a metric alert on a 10% blend is not reliable enough to fire</td></tr>
-              <tr><td>Remediation</td><td>Blunt full rollback - shift 100% traffic back to baseline</td><td><strong>Targeted</strong> canary drain - shift only the canary's 10% back to baseline, leaving the rest of production traffic undisturbed the whole time</td></tr>
+              <tr><td>Mitigation command</td><td colspan="2"><code>az containerapp ingress traffic set</code> - the same shape both times: good revision to 100%, suspect revision to 0%</td></tr>
+              <tr><td>Mitigation scope</td><td>All production traffic moves, off a revision that is 100% broken</td><td>Only the canary's ~10% moves, off a revision that is 100% broken <em>on its own slice</em>; the healthy 90% is undisturbed throughout</td></tr>
             </tbody>
           </table>
         </div>
@@ -1063,10 +1080,13 @@
           <p>Narrate the incident thread. The agent should explicitly frame
             this as <strong>"partial canary degradation, not a total
             outage"</strong>, then query Application Insights/Log Analytics
-            grouped by Container App revision. This is the real,
-            verbatim per-revision breakdown from the live 2026-07-30 run
-            (<a href="../../scenarios/canary-regression/evidence/act-beat-transcript-2026-07-30.md">full
-            transcript</a>):</p>
+            grouped by Container App revision. This per-revision breakdown is
+            a <strong>curated excerpt</strong> from the live 2026-07-30 run
+            (<a href="../../scenarios/canary-regression/evidence/act-beat-transcript-2026-07-30.md">the
+            evidence file</a> - a ~164-line summary, not a complete raw
+            export: it omits the underlying KQL queries, full tool responses,
+            and per-minute bins; a complete raw capture is planned separately
+            and this section will be upgraded when it exists):</p>
           <table>
             <thead><tr><th>Revision</th><th>Total requests</th><th>Failed</th><th>Succeeded</th><th>Failure rate</th></tr></thead>
             <tbody>
@@ -1074,61 +1094,77 @@
               <tr><td>Canary</td><td>38</td><td>38</td><td>0</td><td><strong>100%</strong></td></tr>
             </tbody>
           </table>
-          <p>The agent's own quantified blast radius: <em>"Overall observed
-            failure rate: ~7-12% per minute, consistent with the canary's 10%
-            traffic weight."</em> This per-revision partitioning - not a
-            single aggregate failure rate - is the capability
-            <code>bad-deployment</code> cannot demonstrate, because it never
-            has a healthy revision to contrast against.</p>
+          <p>The agent's own quantified blast radius, quoted verbatim: <em>"Overall
+            observed failure rate: ~7-12% per minute, consistent with the
+            canary's 10% traffic weight."</em> The aggregate request counts
+            above do support roughly 10% blast radius; the curated excerpt
+            does not include the per-minute rows behind the "~7-12% per
+            minute" figure itself - say it as the agent's own stated
+            estimate, not as a per-minute result you can show. This
+            per-revision partitioning - not a single aggregate failure rate -
+            is the capability <code>bad-deployment</code> cannot demonstrate,
+            because it never has a healthy revision to contrast against.</p>
         </div>
         <div>
-          <h3>Live: the targeted drain, not a blunt rollback</h3>
+          <h3>Live: minimal mitigation, once the diagnosis is precise</h3>
           <p>The agent's own words: <em>"Investigation complete. Handing off
             to the <code>rollback-advisor</code> subagent to drain the failing
-            canary."</em> Watch for the specific command - it names both
-            revisions and only zeroes the canary:</p>
+            canary."</em> Watch for the specific command - it is the same
+            shape as <code>bad-deployment</code>'s rollback, just scoped to
+            what the evidence actually showed was broken:</p>
           <pre><code>az containerapp ingress traffic set --name ca-pulsemart-demo --resource-group rg-sre-agent-workload-demo --revision-weight &lt;baseline&gt;=100 &lt;canary&gt;=0</code></pre>
           <p><strong>Expected visible state:</strong> traffic shifts to 100%
-            baseline / 0% canary - a targeted correction, not the blunt "move
-            everything back" rollback from <code>bad-deployment</code>. Then
-            open the Azure Activity Log for
+            baseline / 0% canary. Do not present this as a materially
+            different control action from <code>bad-deployment</code>'s
+            rollback - it is the identical command shape, sized to a smaller,
+            precisely diagnosed blast radius instead of the whole workload.
+            Then open the Azure Activity Log for
             <code>rg-sre-agent-workload-demo</code>: the drain write lands at
             a timestamp attributed to the <strong>agent's own managed
             identity</strong>, not the presenter's - the same proof pattern as
-            the Act beat, on a different, targeted action. In the live run,
-            two earlier writes at trigger time were attributed to the
-            operator (setting up the canary split), and the drain write ten
-            minutes later was attributed to the agent - the two are clearly
-            distinguishable by <code>caller</code> alone.</p>
+            the main Act beat. In the live run, two earlier writes at trigger
+            time were attributed to the operator (setting up the canary
+            split), and the drain write about ten minutes later was
+            attributed to the agent - the two are clearly distinguishable by
+            <code>caller</code> alone.</p>
         </div>
         <div>
-          <h3>Real measured timing - one run so far</h3>
+          <h3>Real measured timing - one run so far, budget generously</h3>
           <table>
             <thead><tr><th>Phase</th><th>Measured</th></tr></thead>
             <tbody>
               <tr><td>Trigger -> alert Fired</td><td>133 s</td></tr>
               <tr><td>Alert -> incident thread</td><td>79 s</td></tr>
               <tr><td>Thread -> investigation report</td><td>338 s</td></tr>
-              <tr><td>Report -> agent executes the targeted drain</td><td>62 s</td></tr>
+              <tr><td>Report -> agent executes the drain</td><td>62 s</td></tr>
               <tr><td>Drain -> agent's own resolution summary</td><td>128 s</td></tr>
               <tr><td>Drain -> alert Resolved</td><td>781 s</td></tr>
             </tbody>
           </table>
-          <p><strong>The last two rows are different things - do not conflate
-            them.</strong> The agent narrates success (drain -> resolution
-            summary) in about <strong>2 minutes</strong>; the Azure Monitor
-            alert itself does not clear (drain -> Resolved) for about
-            <strong>13 minutes</strong>. <code>scenario.yaml</code> declares
-            this scene at <strong>20 minutes</strong> (versus 15 for
+          <p><strong>This scene takes about 12 minutes if you move on right
+            after the agent's own resolution summary, and 20+ minutes if you
+            wait for the alert to fully clear - budget for the long version,
+            not a short one.</strong> Trigger to the agent's own traffic-drain
+            write measured <strong>586 s</strong>; add the drain-to-summary
+            <strong>128 s</strong> and the real total to a spoken resolution
+            is <strong>~714 s, about 12 minutes</strong>. The last two table
+            rows are different things - do not conflate them: the agent
+            narrates success (drain -> resolution summary) in about
+            <strong>2 minutes</strong>, but the Azure Monitor alert itself
+            does not clear (drain -> Resolved) for about <strong>13
+            minutes</strong> on top of that. <code>scenario.yaml</code>
+            declares this scene at <strong>20 minutes</strong> (versus 15 for
             <code>bad-deployment</code>) for exactly this reason. Only one
-            real run has been measured so far - treat this as a single data
-            point, not yet a range, and budget for it to be slower live.</p>
+            real run has been measured so far - treat every figure above as a
+            single data point, not yet a range, and expect it to run longer
+            live, not shorter.</p>
           <p><strong>Practical guidance:</strong> plan to move on right after
-            the agent's own resolution summary (~2 minutes after the drain) -
+            the agent's own resolution summary (~12 minutes from trigger) -
             do not wait live for the alert to auto-resolve unless you have
-            time to spare. If you want to show the resolved alert, trigger
-            this scene early and check back on it after other beats, rather
-            than waiting on stage.</p>
+            deliberately budgeted the extra ~13 minutes for it. There is no
+            reliable way to shorten this scene below about 12 minutes without
+            skipping the revision-partition evidence that is the entire
+            reason to run it.</p>
         </div>
         <div>
           <h3>Live: verify recovery</h3>
@@ -1161,8 +1197,8 @@
           <p>If the alert has not fired within <code>alert.max_wait_seconds</code>
             (600s / 10 min), <code>demo trigger</code> still exits 0 as long
             as the observed failure count is genuine - the fault is live
-            either way. If the agent has not executed the targeted drain
-            within a few minutes of a clear investigation conclusion, run
+            either way. If the agent has not executed the drain within a few
+            minutes of a clear investigation conclusion, run
             <code>demo reset canary-regression</code> yourself as the
             operator safety net (exactly as with <code>bad-deployment</code>)
             and narrate that explicitly as a fallback, not the intended path.</p>
@@ -1199,15 +1235,17 @@
     resource, its managed identities, and its own Application Insights and
     Log Analytics. The workload resource group contains the Azure Container
     Registry, the PulseMart Container App, its Log Analytics workspace, its
-    Application Insights instance, and the checkout failure alert. The
+    Application Insights instance, and the Container App 5xx alert. The
     Container Registry supplies images to the Container App, which sends
     telemetry to its Log Analytics workspace and Application Insights
     instance. Application Insights feeds the alert, the alert reaches the
     agent through the Azure Monitor incident platform, and the agent reads
     Application Insights, Log Analytics, and the Container App, and connects
-    to the GitHub repository for source context, to investigate and
-    recommend a remediation in writing; the presenter carries out the actual
-    change themselves.
+    to the GitHub repository for source context, to investigate and, for
+    this response plan, execute an evidence-proportionate remediation itself
+    under its own managed identity - the presenter narrates and
+    independently verifies via the Azure Activity Log, not by approving
+    anything.
   </desc>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7"
@@ -1232,7 +1270,7 @@
   <!-- Presenter and labctl -->
   <rect class="box box--accent" x="390" y="12" width="220" height="52"></rect>
   <text class="node-title" x="500" y="34" text-anchor="middle">Presenter</text>
-  <text class="node-sub" x="500" y="52" text-anchor="middle">runs labctl, performs the mitigation</text>
+  <text class="node-sub" x="500" y="52" text-anchor="middle">runs labctl, narrates and independently verifies</text>
 
   <path class="edge" d="M500,64 L500,96"></path>
 
@@ -1329,7 +1367,7 @@
   <text class="node-sub" x="560" y="465" text-anchor="middle">alert fires -&gt; incident</text>
 
   <path class="edge--accent" d="M300,390 C 420,430 560,440 700,436"></path>
-  <text class="node-sub" x="500" y="422" text-anchor="middle">investigate (read) - recommend, in writing</text>
+  <text class="node-sub" x="500" y="422" text-anchor="middle">investigate (read) - recommend, then execute (real write, agent's own identity)</text>
 
   <path class="edge" d="M240,568 C 340,568 420,520 300,390"></path>
 </svg>

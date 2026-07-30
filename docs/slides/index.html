@@ -839,7 +839,7 @@
       </div>
     </section>
 
-    <!-- ======================= SEGMENT 7: OPTIONAL DEEPER SCENE - CANARY REGRESSION (~8 min if shown, not part of the core run) ======================= -->
+    <!-- ======================= SEGMENT 7: OPTIONAL DEEPER SCENE - CANARY REGRESSION (~12-20 min if shown, not part of the core run) ======================= -->
 
     <section class="slide" id="s-canary-intro" tabindex="-1">
       <div class="slide-kicker">
@@ -848,11 +848,12 @@
       <h2 data-slide-title>Optional: what about partial failures?</h2>
       <div class="slide-body">
         <p class="lead">A second, optional scene - not a replacement for the
-          story you just watched. Run it only if there is time and the room
-          wants to see the agent handle ambiguity.</p>
+          story you just watched. Run it only with a genuine 12-20 minutes
+          to spare, and only if the room wants to see the agent handle
+          ambiguity.</p>
         <ul>
           <li class="fragment">Same deployed environment, same agent - no
-            redeploy.</li>
+            redeploy, but the two scenes cannot run concurrently.</li>
           <li class="fragment">Follows Learn, before Adoption guidance - or
             skip straight to Adoption if time is short.</li>
           <li class="fragment"><code>bad-deployment</code> is all-or-nothing;
@@ -861,7 +862,8 @@
       </div>
       <div class="notes" hidden>
         <p>Frame this explicitly as optional every time - do not treat it as
-          a required part of the run. Full presenter detail:
+          a required part of the run, and do not start it with less than
+          12-20 minutes left. Full presenter detail:
           guide, "Optional deeper scene: Canary regression".</p>
       </div>
     </section>
@@ -877,7 +879,7 @@
           <ul>
             <li>Total outage - 100% of checkout traffic</li>
             <li>Unambiguous - every checkout fails</li>
-            <li>Blunt full rollback</li>
+            <li>All production traffic shifts back</li>
           </ul>
         </div>
         <div class="card fragment">
@@ -885,14 +887,17 @@
           <ul>
             <li>Partial - about 10% of checkout traffic</li>
             <li>Ambiguous - must attribute failures to the right revision</li>
-            <li>Targeted canary drain only</li>
+            <li>Only the canary's slice shifts back</li>
           </ul>
         </div>
       </div>
       <div class="notes" hidden>
         <p>Say this pairing out loud - it is the entire justification for
-          running this scene at all. Full mechanism/detection contrast table
-          is in the guide.</p>
+          running this scene at all. Both scenes run the identical
+          <code>az containerapp ingress traffic set</code> command shape -
+          the contrast is in the diagnosis (how the agent figures out what
+          and how much is broken), not in a fundamentally different control
+          action. Full mechanism/detection contrast table is in the guide.</p>
       </div>
     </section>
 
@@ -941,10 +946,12 @@
       </div>
       <div class="notes" hidden>
         <p>This is the strongest single moment in this scene - lead with it.
-          Real, verbatim numbers from the 2026-07-30 transcript, quoted in
-          full in the guide. This per-revision partitioning is exactly what
-          bad-deployment cannot show, because it never has a healthy revision
-          to contrast against.</p>
+          Real numbers from a curated excerpt of the 2026-07-30 transcript
+          (not a complete raw export - the per-minute figure is the agent's
+          own stated estimate, not a result you can show a per-minute row
+          for), quoted in full in the guide. This per-revision partitioning is
+          exactly what bad-deployment cannot show, because it never has a
+          healthy revision to contrast against.</p>
       </div>
     </section>
 
@@ -953,22 +960,27 @@
         <span class="chip chip--accent">Optional scene: Canary regression</span>
         <span class="chip chip--solid">Live</span>
       </div>
-      <h2 data-slide-title>Live: the targeted drain</h2>
+      <h2 data-slide-title>Live: minimal mitigation, precisely scoped</h2>
       <div class="slide-body">
         <p>The agent's own words: <em>"Handing off to the rollback-advisor
           subagent to drain the failing canary."</em></p>
         <ul>
-          <li class="fragment">The command names both revisions and zeroes
-            only the canary - not a blunt "move everything back".</li>
+          <li class="fragment">Same command shape as <code>bad-deployment</code>'s
+            rollback - just scoped to the canary's 10%, because that is what
+            the evidence showed was broken.</li>
           <li class="fragment">Activity Log: the drain write is attributed to
             the <strong>agent's own managed identity</strong>, distinct from
             the operator's earlier trigger-time writes.</li>
         </ul>
       </div>
       <div class="notes" hidden>
-        <p>Same proof pattern as the main Act beat's Activity Log moment, on a
-          more surgical action. Full command text and Activity Log table:
-          guide.</p>
+        <p>Do not call this a "targeted action" as if it were a different
+          kind of write from bad-deployment's rollback - it is the identical
+          command, sized to what was actually found broken. The interesting
+          part is that the agent worked out which revision and how much was
+          affected, not that it ran a different kind of command. Same proof
+          pattern as the main Act beat's Activity Log moment. Full command
+          text and Activity Log table: guide.</p>
       </div>
     </section>
 
@@ -983,9 +995,11 @@
         <ul>
           <li class="fragment">Live-verified: <strong>5 passed, 0 warned,
             0 failed</strong>, independent of the agent's own narrative.</li>
-          <li class="fragment">The agent's own summary lands ~2 minutes after
-            the drain; the Azure Monitor alert itself takes ~13 minutes to
-            auto-resolve - do not wait live for the alert if time is short.</li>
+          <li class="fragment">This scene runs about <strong>12 minutes</strong>
+            to the agent's own resolution summary; the Azure Monitor alert
+            itself takes about <strong>13 more minutes</strong> to
+            auto-resolve on top of that - plan for the full 12-20 minutes,
+            do not attempt to compress this scene.</li>
           <li class="fragment">Honest caveat: this run's connected source
             lagged the deployed image: the agent noticed and reasoned from
             live telemetry instead - it did not demonstrate source-grounded
@@ -994,9 +1008,11 @@
       </div>
       <div class="notes" hidden>
         <p>Say the timing split plainly - narrating success and the alert
-          clearing are two different, real events, only one of which is fast.
-          The source-lag caveat pairs with the memory-persistence caveat from
-          the main Act beat - same honesty pattern, different mechanism.
+          clearing are two different, real events, only one of which is fast
+          (~2 min vs. ~13 min after that). Do not promise this scene fits in
+          8 minutes; it does not. The source-lag caveat pairs with the
+          memory-persistence caveat from the main Act beat - same honesty
+          pattern, different mechanism.
           <code>& 'labctl\.venv\Scripts\labctl.exe' demo reset
           canary-regression</code> is the safe, repeatable reset.</p>
       </div>

@@ -8,14 +8,17 @@
     resource, its managed identities, and its own Application Insights and
     Log Analytics. The workload resource group contains the Azure Container
     Registry, the PulseMart Container App, its Log Analytics workspace, its
-    Application Insights instance, and the checkout failure alert. The
+    Application Insights instance, and the Container App 5xx alert. The
     Container Registry supplies images to the Container App, which sends
     telemetry to its Log Analytics workspace and Application Insights
     instance. Application Insights feeds the alert, the alert reaches the
     agent through the Azure Monitor incident platform, and the agent reads
     Application Insights, Log Analytics, and the Container App, and connects
-    to the GitHub repository for source context, to investigate and, once a
-    human approves, to remediate.
+    to the GitHub repository for source context, to investigate and, for
+    this response plan, execute an evidence-proportionate remediation itself
+    under its own managed identity - the presenter narrates and
+    independently verifies via the Azure Activity Log, not by approving
+    anything.
   </desc>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7"
@@ -40,7 +43,7 @@
   <!-- Presenter and labctl -->
   <rect class="box box--accent" x="390" y="12" width="220" height="52"></rect>
   <text class="node-title" x="500" y="34" text-anchor="middle">Presenter</text>
-  <text class="node-sub" x="500" y="52" text-anchor="middle">runs labctl, approves actions</text>
+  <text class="node-sub" x="500" y="52" text-anchor="middle">runs labctl, narrates and independently verifies</text>
 
   <path class="edge" d="M500,64 L500,96"></path>
 
@@ -137,7 +140,7 @@
   <text class="node-sub" x="560" y="465" text-anchor="middle">alert fires -&gt; incident</text>
 
   <path class="edge--accent" d="M300,390 C 420,430 560,440 700,436"></path>
-  <text class="node-sub" x="500" y="422" text-anchor="middle">investigate (read) - remediate (approved write)</text>
+  <text class="node-sub" x="500" y="422" text-anchor="middle">investigate (read) - recommend, then execute (real write, agent's own identity)</text>
 
   <path class="edge" d="M240,568 C 340,568 420,520 300,390"></path>
 </svg>
