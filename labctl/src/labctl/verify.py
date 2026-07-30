@@ -79,27 +79,11 @@ def check_checkout_behavior(base_url: str) -> CheckResult:
         return CheckResult(
             "workload-checkout", Status.FAIL, f"GET /api/status unreachable: {status.error}"
         )
-    body = status.json() or {}
-    failure_mode = body.get("failure_mode")
 
     checkout = http_post(f"{base_url}/api/checkout", timeout=15.0, retries=2)
     if not checkout.ok:
         return CheckResult(
             "workload-checkout", Status.FAIL, f"POST /api/checkout unreachable: {checkout.error}"
-        )
-
-    if failure_mode:
-        if checkout.status_code == 500:
-            return CheckResult(
-                "workload-checkout",
-                Status.PASS,
-                f"POST /api/checkout returned HTTP 500 as expected (failure_mode={failure_mode}).",
-            )
-        return CheckResult(
-            "workload-checkout",
-            Status.FAIL,
-            f"failure_mode={failure_mode} active, but POST /api/checkout returned "
-            f"HTTP {checkout.status_code} (expected 500).",
         )
 
     if checkout.status_code == 200:
@@ -1039,7 +1023,7 @@ def check_agent_response_plans(
     """Verify every expected response plan exists AND has the expected
     `agentMode`.
 
-    `checkout-5xx` must read `agentMode: Autonomous` -- product-owner
+    `containerapp-5xx` must read `agentMode: Autonomous` -- product-owner
     decision, 2026-07-30 (see SPEC.md section 5 Scene 5 and PLAN.md
     Milestone 5): live testing proved this preview build's Review-mode
     Approve/Deny gate does not reliably engage before a mutating write

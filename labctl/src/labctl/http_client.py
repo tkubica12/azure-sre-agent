@@ -43,7 +43,7 @@ def _request(
         body = exc.read().decode("utf-8", "replace") if exc.fp else ""
         # A non-2xx response is still a completed request; callers decide
         # whether that status code is expected (e.g. verifying the demo's
-        # deterministic HTTP 500 failure mode).
+        # deterministic HTTP 500 checkout regression).
         return HttpResult(ok=True, status_code=exc.code, body=body)
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         return HttpResult(ok=False, status_code=0, body="", error=str(exc))

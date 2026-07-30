@@ -10,25 +10,24 @@
 slug: bad-deployment
 title: "Bad deployment: checkout returns HTTP 500"
 summary: >-
-  A new Container Apps revision ships with a broken checkout dependency
-  (DEMO_FAILURE_MODE=checkout-500) and receives 100% of production traffic.
-  Checkout requests fail with HTTP 500, Azure Monitor's real metric alert
-  fires, the Azure SRE Agent investigates, and its rollback-advisor subagent
-  executes a real traffic rollback to the known-good revision itself, under
-  its own managed identity, in Autonomous mode (product-owner decision,
-  2026-07-30 -- see SPEC.md section 5 Scene 5 and PLAN.md Milestone 5).
-  Telemetry and the Activity Log both prove recovery and prove the agent's
-  own identity made the change.
+  A new Container Apps revision ships with a payment-gateway configuration
+  regression and receives 100% of production traffic. Checkout requests fail
+  with HTTP 500, Azure Monitor's real Container App 5xx metric alert fires,
+  the Azure SRE Agent investigates, and its rollback-advisor subagent executes
+  a real traffic rollback to the known-good revision itself, under its own
+  managed identity, in Autonomous mode (product-owner decision, 2026-07-30 --
+  see SPEC.md section 5 Scene 5 and PLAN.md Milestone 5). Telemetry and the
+  Activity Log both prove recovery and prove the agent's own identity made the
+  change.
 estimated_duration_minutes: 15
 
 fault:
   # Environment variables merged into the new revision's container template.
-  # Only DEMO_FAILURE_MODE changes; APPLICATIONINSIGHTS_CONNECTION_STRING,
-  # PULSEMART_RELEASE, and PULSEMART_ENVIRONMENT are carried over unchanged
-  # from the current baseline (see labctl/src/labctl/scenario.py
-  # `_fault_env_vars`).
+  # Only the payment-gateway profile changes; APPLICATIONINSIGHTS_CONNECTION_STRING,
+  # PULSEMART_RELEASE, and PULSEMART_ENVIRONMENT are carried over unchanged from
+  # the current baseline (see labctl/src/labctl/scenario.py `_fault_env_vars`).
   env:
-    DEMO_FAILURE_MODE: checkout-500
+    PAYMENT_GATEWAY_PROFILE: legacy-acquirer
   # Prefix for the immutable revision suffix labctl creates. A fresh epoch
   # suffix on every `labctl demo trigger` keeps repeat runs idempotent
   # without colliding with a still-existing prior fault revision (Container
@@ -43,7 +42,7 @@ alert:
   # Falls back to the Terraform-managed metric alert name from
   # infra/modules/alerting (`workload_context.metric_alert_name`) when this
   # entry is not overridden; kept explicit here for operator visibility.
-  name: alert-pulsemart-checkout-5xx
+  name: alert-pulsemart-containerapp-5xx
   # Azure Monitor evaluates this rule every PT1M over a trailing PT5M window
   # (see infra/modules/alerting/variables.tf). The rule can only fire on an
   # evaluation boundary, so the honest expected range is 1-6 minutes after
@@ -89,7 +88,7 @@ checks:
 
 incident:
   # Must match agent/automations/incident-filters/checkout-5xx.yaml.
-  response_plan: checkout-5xx
+  response_plan: containerapp-5xx
   handling_subagent: incident-investigator
-  title_contains: checkout
+  title_contains: pulsemart
   severity: Sev2

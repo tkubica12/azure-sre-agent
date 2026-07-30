@@ -91,11 +91,11 @@ module "alerting" {
   source = "../../modules/alerting"
 
   resource_group_name     = module.workload_resource_group.name
-  action_group_name       = "ag-pulsemart-checkout-demo"
+  action_group_name       = "ag-pulsemart-alerts-demo"
   action_group_short_name = "pulsemart"
   notification_email      = var.alert_notification_email
   container_app_id        = module.container_app.id
-  alert_name              = "alert-pulsemart-checkout-5xx"
+  alert_name              = "alert-pulsemart-containerapp-5xx"
   threshold               = var.alert_threshold_5xx
   tags                    = var.tags
 }
@@ -139,4 +139,3 @@ module "sre_agent" {
   default_model_provider   = var.agent_model_provider
   default_model_name       = var.agent_model_name
 }
-

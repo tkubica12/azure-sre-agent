@@ -38,8 +38,8 @@ FULL_OUTPUTS = {
         "value": "ca-pulsemart-demo.happyplant-123.swedencentral.azurecontainerapps.io"
     },
     "action_group_id": {"value": "/subscriptions/x/.../ag-pulsemart-checkout-demo"},
-    "metric_alert_id": {"value": "/subscriptions/x/.../alert-pulsemart-checkout-5xx"},
-    "metric_alert_name": {"value": "alert-pulsemart-checkout-5xx"},
+    "metric_alert_id": {"value": "/subscriptions/x/.../alert-pulsemart-containerapp-5xx"},
+    "metric_alert_name": {"value": "alert-pulsemart-containerapp-5xx"},
 }
 
 

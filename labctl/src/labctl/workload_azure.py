@@ -176,9 +176,9 @@ def containerapp_update_image(
 ) -> CommandResult:
     """Create a new immutable revision from ``image`` with an explicit
     ``revision_suffix``, replacing the container's environment variables
-    with exactly ``env_vars`` (via ``--replace-env-vars``, so a stale
-    ``DEMO_FAILURE_MODE`` from a previous scenario revision cannot leak into
-    the new one).
+    with exactly ``env_vars`` (via ``--replace-env-vars``, so a stale payment
+    dependency profile from a previous scenario revision cannot leak into the
+    new one).
     """
 
     args = [
@@ -319,7 +319,7 @@ def containerapp_revision_list(
 #: The `Microsoft.AlertsManagement/alerts` API version this demo pins for
 #: reading real fired-alert *instances* (distinct from the metric alert
 #: *rule* resource `monitor_metric_alert_show` reads). Live-verified
-#: 2026-07-29 against a real fired `alert-pulsemart-checkout-5xx` instance:
+#: 2026-07-29 against a real fired Container App 5xx alert instance:
 #: the `alertRule` query parameter (accepted by the API, unlike the rejected
 #: `alertRuleName`) filters on the alert rule's full ARM resource ID, not its
 #: bare name -- passing just the name silently matched zero alerts instead of

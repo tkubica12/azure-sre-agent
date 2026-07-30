@@ -27,7 +27,7 @@ def test_load_agent_content_reads_the_real_repository_content() -> None:
         "safety-rules",
     }
     assert {t.name for t in content.scheduled_tasks} == {"daily-reliability-summary"}
-    assert {f.name for f in content.incident_filters} == {"checkout-5xx"}
+    assert {f.name for f in content.incident_filters} == {"containerapp-5xx"}
     assert content.incident_platform is not None
     assert content.incident_platform.platform_type == "AzMonitor"
     assert {k.filename for k in content.knowledge_files} == {
@@ -63,18 +63,18 @@ def test_subagent_instructions_are_inlined_and_reference_the_skill() -> None:
     assert investigator.handoffs == ()
 
 
-def test_incident_filter_routes_checkout_alerts_to_the_investigator() -> None:
+def test_incident_filter_routes_pulsemart_5xx_alerts_to_the_investigator() -> None:
     content = agent_content.load_agent_content(REPO_ROOT)
 
-    checkout_filter = next(f for f in content.incident_filters if f.name == "checkout-5xx")
+    incident_filter = next(f for f in content.incident_filters if f.name == "containerapp-5xx")
 
-    assert checkout_filter.handling_agent == "incident-investigator"
-    assert "checkout" in checkout_filter.title_contains
+    assert incident_filter.handling_agent == "incident-investigator"
+    assert "pulsemart" in incident_filter.title_contains
     # Product-owner decision, 2026-07-30 (SPEC.md section 5 Scene 5, PLAN.md
     # Milestone 5): Review-mode's Approve/Deny gate does not reliably engage
     # in this preview build, so this response plan is honestly configured
     # Autonomous rather than claiming a gate that does not work.
-    assert checkout_filter.agent_mode == "Autonomous"
+    assert incident_filter.agent_mode == "Autonomous"
 
 
 def test_rollback_advisor_holds_the_scoped_write_tool_and_investigator_does_not() -> None:

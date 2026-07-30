@@ -33,7 +33,7 @@ def _context(**overrides: object) -> WorkloadContext:
         container_app_fqdn="ca-pulsemart-demo.example.azurecontainerapps.io",
         action_group_id="/subscriptions/x/ag",
         metric_alert_id="/subscriptions/x/alert",
-        metric_alert_name="alert-pulsemart-checkout-5xx",
+        metric_alert_name="alert-pulsemart-containerapp-5xx",
     )
     defaults.update(overrides)
     return WorkloadContext(**defaults)  # type: ignore[arg-type]
@@ -87,7 +87,7 @@ def test_check_endpoint_health_fails_when_unreachable(monkeypatch: pytest.Monkey
 
 def test_check_checkout_behavior_expects_200_when_healthy(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_get(url, **_kw):
-        return HttpResult(ok=True, status_code=200, body='{"failure_mode": null}')
+        return HttpResult(ok=True, status_code=200, body='{"revision": "rev"}')
 
     def fake_post(url, **_kw):
         return HttpResult(ok=True, status_code=200, body='{"status": "confirmed"}')
@@ -100,11 +100,11 @@ def test_check_checkout_behavior_expects_200_when_healthy(monkeypatch: pytest.Mo
     assert result.status == Status.PASS
 
 
-def test_check_checkout_behavior_expects_500_when_failure_mode_active(
+def test_check_checkout_behavior_fails_when_checkout_is_returning_500(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def fake_get(url, **_kw):
-        return HttpResult(ok=True, status_code=200, body='{"failure_mode": "checkout-500"}')
+        return HttpResult(ok=True, status_code=200, body='{"revision": "rev"}')
 
     def fake_post(url, **_kw):
         return HttpResult(ok=True, status_code=500, body='{"status": "failed"}')
@@ -114,14 +114,14 @@ def test_check_checkout_behavior_expects_500_when_failure_mode_active(
 
     result = verify.check_checkout_behavior(BASE_URL)
 
-    assert result.status == Status.PASS
+    assert result.status == Status.FAIL
 
 
 def test_check_checkout_behavior_fails_on_unexpected_status(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def fake_get(url, **_kw):
-        return HttpResult(ok=True, status_code=200, body='{"failure_mode": null}')
+        return HttpResult(ok=True, status_code=200, body='{"revision": "rev"}')
 
     def fake_post(url, **_kw):
         return HttpResult(ok=True, status_code=500, body='{"status": "failed"}')
@@ -983,13 +983,13 @@ def test_check_agent_response_plans_pass_when_agent_mode_matches(
         verify.agent_dataplane,
         "get_incident_filters",
         lambda endpoint, token: (
-            [{"id": "checkout-5xx", "agentMode": "Autonomous"}],
+            [{"id": "containerapp-5xx", "agentMode": "Autonomous"}],
             verify.agent_dataplane.DataPlaneResult(True, 200, "GET incidentPlayground/filters"),
         ),
     )
     expected = (
         agent_content.IncidentFilterContent(
-            name="checkout-5xx",
+            name="containerapp-5xx",
             incident_platform="AzMonitor",
             handling_agent="incident-investigator",
             is_enabled=True,
@@ -1018,13 +1018,13 @@ def test_check_agent_response_plans_fails_when_agent_mode_drifts_from_autonomous
         verify.agent_dataplane,
         "get_incident_filters",
         lambda endpoint, token: (
-            [{"id": "checkout-5xx", "agentMode": "Review"}],
+            [{"id": "containerapp-5xx", "agentMode": "Review"}],
             verify.agent_dataplane.DataPlaneResult(True, 200, "GET incidentPlayground/filters"),
         ),
     )
     expected = (
         agent_content.IncidentFilterContent(
-            name="checkout-5xx",
+            name="containerapp-5xx",
             incident_platform="AzMonitor",
             handling_agent="incident-investigator",
             is_enabled=True,

@@ -4,14 +4,13 @@ Routes match SPEC.md section 7 exactly:
 
 - ``GET /`` self-contained HTML status/checkout dashboard.
 - ``GET /healthz`` liveness/readiness probe, always healthy.
-- ``GET /api/status`` machine-readable release/revision/environment status.
-- ``POST /api/checkout`` the synthetic checkout journey; deterministically
-  fails with HTTP 500 when ``DEMO_FAILURE_MODE=checkout-500``.
+- ``GET /api/status`` machine-readable release/revision status.
+- ``POST /api/checkout`` the synthetic checkout journey.
 
-There is deliberately no endpoint that can change ``DEMO_FAILURE_MODE`` or any
-other runtime behavior: the fault is a Container Apps revision environment
-variable, changed only through authenticated Azure control-plane operations
-by ``labctl`` (see AGENTS.md "Real workload and incidents").
+There is deliberately no endpoint that can change payment dependency behavior:
+the fault is a Container Apps revision environment variable, changed only
+through authenticated Azure control-plane operations by ``labctl`` (see
+AGENTS.md "Real workload and incidents").
 """
 
 from __future__ import annotations
@@ -69,7 +68,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
-        # Always available, even in checkout-500 mode: SPEC.md requires
+        # Always available during the checkout regression: SPEC.md requires
         # health/admin endpoints to keep working while checkout fails.
         return {"status": "ok"}
 
@@ -79,8 +78,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "service": "pulsemart",
             "release": settings.pulsemart_release,
             "revision": settings.revision(),
-            "environment": settings.pulsemart_environment,
-            "failure_mode": settings.demo_failure_mode or None,
             "uptime_seconds": round(time.monotonic() - _START_TIME, 1),
             "timestamp": datetime.now(UTC).isoformat(),
         }
@@ -90,12 +87,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         order_id = str(uuid.uuid4())
         log_extra = {
             "order_id": order_id,
-            "failure_mode": settings.demo_failure_mode or "none",
         }
 
         with tracer.start_as_current_span("checkout") as checkout_span:
             checkout_span.set_attribute("order.id", order_id)
-            checkout_span.set_attribute("demo.failure_mode", settings.demo_failure_mode or "none")
             checkout_span.set_attribute("service.release", settings.pulsemart_release)
             checkout_span.set_attribute("service.revision", settings.revision())
 
@@ -103,7 +98,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
             try:
                 await _charge_payment(tracer, order_id, settings)
-            except CheckoutFailure as exc:
+            except UpstreamPaymentGatewayError as exc:
                 checkout_span.record_exception(exc)
                 checkout_span.set_status(Status(StatusCode.ERROR, str(exc)))
                 logger.error("checkout failed: %s", exc, extra=log_extra)
@@ -112,7 +107,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     content={
                         "order_id": order_id,
                         "status": "failed",
-                        "error": str(exc),
+                        "error": "payment authorization temporarily unavailable",
                     },
                 )
 
@@ -129,9 +124,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     return app
 
 
-class CheckoutFailure(RuntimeError):
-    """Raised by the simulated payment dependency when the demo's
-    checkout-500 failure mode is active."""
+class UpstreamPaymentGatewayError(RuntimeError):
+    """Raised when the simulated payment dependency rejects authorization."""
 
 
 async def _check_inventory(tracer: trace.Tracer, order_id: str) -> None:
@@ -148,21 +142,19 @@ async def _check_inventory(tracer: trace.Tracer, order_id: str) -> None:
 
 
 async def _charge_payment(tracer: trace.Tracer, order_id: str, settings: Settings) -> None:
-    """Simulate a payment-gateway dependency call. Deterministically raises
-    ``CheckoutFailure`` when ``DEMO_FAILURE_MODE=checkout-500`` is active,
-    modeling a bad deployment that broke payment processing.
-    """
+    """Simulate a payment-gateway dependency call."""
 
     with tracer.start_as_current_span("payment.charge") as span:
         span.set_attribute("order.id", order_id)
         span.set_attribute("peer.service", "payment-gateway")
         await asyncio.sleep(random.uniform(0.02, 0.05))
-        if settings.failure_mode_active():
+        if settings.payment_gateway_regression_active():
             span.set_attribute("payment.result", "error")
-            raise CheckoutFailure(
-                "payment gateway returned an unexpected error (demo failure mode: checkout-500)"
+            raise UpstreamPaymentGatewayError(
+                "upstream payment gateway returned HTTP 502 Bad Gateway "
+                "while authorizing the charge"
             )
         span.set_attribute("payment.result", "approved")
 
 
-__all__ = ["create_app", "CheckoutFailure"]
+__all__ = ["create_app", "UpstreamPaymentGatewayError"]

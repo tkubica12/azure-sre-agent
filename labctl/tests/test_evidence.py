@@ -44,7 +44,7 @@ def _workload_context() -> WorkloadContext:
         container_app_fqdn="ca-pulsemart-demo.example.azurecontainerapps.io",
         action_group_id="/subscriptions/x/ag",
         metric_alert_id="/subscriptions/x/alert",
-        metric_alert_name="alert-pulsemart-checkout-5xx",
+        metric_alert_name="alert-pulsemart-containerapp-5xx",
     )
 
 

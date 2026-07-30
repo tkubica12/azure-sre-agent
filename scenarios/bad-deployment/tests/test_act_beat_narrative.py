@@ -32,7 +32,7 @@ def _load_yaml(path: Path) -> dict:
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
-def test_checkout_5xx_response_plan_is_autonomous_not_review() -> None:
+def test_containerapp_5xx_response_plan_is_autonomous_not_review() -> None:
     doc = _load_yaml(AGENT_DIR / "automations" / "incident-filters" / "checkout-5xx.yaml")
 
     assert doc["spec"]["agentMode"] == "Autonomous"

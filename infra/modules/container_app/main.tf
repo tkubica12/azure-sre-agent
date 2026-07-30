@@ -58,8 +58,8 @@ resource "azurerm_container_app" "this" {
         value = "bootstrap"
       }
       env {
-        name  = "DEMO_FAILURE_MODE"
-        value = ""
+        name  = "PAYMENT_GATEWAY_PROFILE"
+        value = "standard"
       }
       env {
         name        = "APPLICATIONINSIGHTS_CONNECTION_STRING"

@@ -88,7 +88,7 @@ def _content() -> agent_content.AgentContent:
         ),
         incident_filters=(
             agent_content.IncidentFilterContent(
-                name="checkout-5xx",
+                name="containerapp-5xx",
                 incident_platform="AzMonitor",
                 handling_agent="incident-investigator",
                 is_enabled=True,
@@ -96,7 +96,7 @@ def _content() -> agent_content.AgentContent:
                 agent_mode="Autonomous",
                 deep_investigation_enabled=False,
                 max_automated_investigation_attempts=3,
-                title_contains="checkout",
+                title_contains="pulsemart",
             ),
         ),
         incident_platform=agent_content.IncidentPlatformContent(

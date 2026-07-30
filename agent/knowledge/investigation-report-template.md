@@ -11,7 +11,7 @@ connected GitHub source.
 - **Incident:** one sentence describing user-visible impact (e.g. "Checkout
   requests to PulseMart are failing with HTTP 500").
 - **Detected by:** the alert or signal that started the investigation
-  (e.g. `alert-pulsemart-checkout-5xx`, fired at `<timestamp>`).
+  (e.g. `alert-pulsemart-containerapp-5xx`, fired at `<timestamp>`).
 - **Affected scope:** which endpoint(s), which Container App revision(s),
   what fraction of traffic.
 
@@ -30,8 +30,9 @@ List each piece of evidence with its source:
   stack (if any), dependency span outcome (`inventory.check`,
   `payment.charge`).
 - Log Analytics: any correlated `ContainerAppConsoleLogs_CL` rows.
-- Azure resource state: active revision(s) and traffic split, relevant
-  environment variables (e.g. `DEMO_FAILURE_MODE`).
+- Azure resource state: active revision(s), traffic split, and relevant
+  non-secret configuration differences between the active and known-good
+  revisions.
 - Source: the exact code path in `app/pulsemart/main.py` /
   `app/pulsemart/settings.py` that produces the observed failure.
 

@@ -1,11 +1,11 @@
 metadata:
-  name: checkout-5xx
+  name: containerapp-5xx
 spec:
   incidentPlatform: AzMonitor
   isEnabled: true
   priorities:
   - Sev2
-  titleContains: checkout
+  titleContains: pulsemart
   handlingAgent: incident-investigator
   # Live-verified 2026-07-29 (PLAN.md Milestone 5): this per-response-plan
   # field -- not the agent-wide `actionConfiguration.mode` -- is what

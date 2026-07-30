@@ -58,7 +58,7 @@ def _workload_context() -> WorkloadContext:
         container_app_fqdn="ca-pulsemart-demo.example.azurecontainerapps.io",
         action_group_id="/subscriptions/x/ag",
         metric_alert_id="/subscriptions/x/alert",
-        metric_alert_name="alert-pulsemart-checkout-5xx",
+        metric_alert_name="alert-pulsemart-containerapp-5xx",
     )
 
 
@@ -69,10 +69,10 @@ def _scenario() -> ScenarioDefinition:
         summary="x",
         estimated_duration_minutes=15,
         fault=FaultDefinition(
-            env={"DEMO_FAILURE_MODE": "checkout-500"}, revision_suffix_prefix="fault"
+            env={"PAYMENT_GATEWAY_PROFILE": "legacy-acquirer"}, revision_suffix_prefix="fault"
         ),
         alert=AlertDefinition(
-            name="alert-pulsemart-checkout-5xx",
+            name="alert-pulsemart-containerapp-5xx",
             expected_time_to_fire_minutes=(1, 6),
             max_wait_seconds=1.0,
             poll_interval_seconds=0.01,
@@ -81,7 +81,7 @@ def _scenario() -> ScenarioDefinition:
             request_count=4, concurrency=2, request_timeout_seconds=1.0, min_failures_required=2
         ),
         incident=IncidentDefinition(
-            response_plan="checkout-5xx",
+            response_plan="containerapp-5xx",
             handling_subagent="incident-investigator",
             title_contains="checkout",
             severity="Sev2",
@@ -459,7 +459,7 @@ def test_run_demo_verify_reports_recovered_phase_checks(monkeypatch, tmp_path) -
                 {
                     "properties": {
                         "essentials": {
-                            "alertRule": "alert-pulsemart-checkout-5xx",
+                            "alertRule": "alert-pulsemart-containerapp-5xx",
                             "monitorCondition": "Resolved",
                         }
                     }
@@ -583,7 +583,7 @@ def test_run_demo_verify_warns_when_alert_resolution_is_still_pending(
                 {
                     "properties": {
                         "essentials": {
-                            "alertRule": "alert-pulsemart-checkout-5xx",
+                            "alertRule": "alert-pulsemart-containerapp-5xx",
                             "monitorCondition": "Fired",
                         }
                     }

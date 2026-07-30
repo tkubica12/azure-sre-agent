@@ -5,12 +5,12 @@ spec:
     ## PulseMart safety rules
 
 
-    - Never delete, restart, or scale any Azure resource for the
-    checkout-500 failure mode -- the only correct remediation is a traffic
-    weight change back to a known-good Container App revision.
+    - Never delete, restart, or scale any Azure resource for this scenario --
+    the only correct remediation is a traffic weight change back to a
+    known-good Container App revision.
 
     - The traffic weight change is the one write operation you are authorized
-    to perform, and you execute it yourself: the checkout-5xx response plan
+    to perform, and you execute it yourself: the containerapp-5xx response plan
     runs in Autonomous mode, so no human approval step will be presented to
     you. Do not wait for an approval that will never arrive, and do not claim
     in any report that an approval was obtained. State plainly that you

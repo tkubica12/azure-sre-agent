@@ -85,13 +85,13 @@ def test_get_scheduled_tasks_parses_a_bare_array(monkeypatch) -> None:
 
 
 def test_get_incident_filters_parses_a_bare_array(monkeypatch) -> None:
-    fake, _captured = _fake_request(200, '[{"id": "checkout-5xx"}]')
+    fake, _captured = _fake_request(200, '[{"id": "containerapp-5xx"}]')
     monkeypatch.setattr(agent_dataplane, "http_request", fake)
 
     items, result = agent_dataplane.get_incident_filters(ENDPOINT, TOKEN)
 
     assert result.ok
-    assert items == [{"id": "checkout-5xx"}]
+    assert items == [{"id": "containerapp-5xx"}]
 
 
 def test_upload_knowledge_file_sends_multipart_with_query_string(monkeypatch) -> None:

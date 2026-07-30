@@ -1,4 +1,4 @@
-// Real Azure Monitor alerting for the checkout-failure scenario (see
+// Real Azure Monitor alerting for the bad-deployment scenario (see
 // SPEC.md sections 5 and 6). The action group intentionally carries no
 // secrets: it has zero receivers unless an operator supplies
 // `notification_email`, and even then only a plain email address (not a
@@ -27,11 +27,11 @@ resource "azurerm_monitor_action_group" "this" {
 // https://learn.microsoft.com/azure/azure-monitor/reference/supported-metrics/microsoft-app-containerapps-metrics
 // on the date recorded in PLAN.md). "5xx" is the exact dimension value
 // Azure Monitor reports for server-error responses.
-resource "azurerm_monitor_metric_alert" "checkout_5xx" {
+resource "azurerm_monitor_metric_alert" "containerapp_5xx" {
   name                = var.alert_name
   resource_group_name = var.resource_group_name
   scopes              = [var.container_app_id]
-  description         = "PulseMart checkout is returning HTTP 5xx responses (Azure SRE Agent demo)."
+  description         = "PulseMart Container App is returning HTTP 5xx responses; determine the failing operation from telemetry."
   severity            = var.severity
   window_size         = var.window_size
   frequency           = var.frequency

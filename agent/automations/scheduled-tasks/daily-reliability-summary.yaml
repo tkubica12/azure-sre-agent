@@ -8,7 +8,7 @@ spec:
   schedule: 0 8 * * *
   prompt: >-
     Summarize the last 24 hours of incidents, fired alerts (especially
-    alert-pulsemart-checkout-5xx), and PulseMart checkout health
+    alert-pulsemart-containerapp-5xx), and PulseMart checkout health
     (ca-pulsemart-demo) in resource group rg-sre-agent-workload-demo. Flag
     any Container App revision or configuration change that needs
     attention, and note whether any incident is still open.

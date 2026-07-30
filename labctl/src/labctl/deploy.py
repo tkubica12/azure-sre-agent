@@ -417,7 +417,7 @@ def run_deploy(
             ),
             "PULSEMART_RELEASE": image_tag,
             "PULSEMART_ENVIRONMENT": config.tags.environment,
-            "DEMO_FAILURE_MODE": "",
+            "PAYMENT_GATEWAY_PROFILE": "standard",
         }
         update_result = workload_azure.containerapp_update_image(
             workload_context.container_app_name,

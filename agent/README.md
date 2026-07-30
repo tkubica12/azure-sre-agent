@@ -1,7 +1,7 @@
 # Azure SRE Agent content (Milestone 4)
 
 Version-controlled data-plane configuration for the deployed
-`Microsoft.App/agents` resource, specific to the PulseMart checkout-500
+`Microsoft.App/agents` resource, specific to the PulseMart Container App 5xx
 incident story (see SPEC.md sections 5 and 10). Applied idempotently by
 `labctl provision` and read back by `labctl verify`/`labctl status`.
 

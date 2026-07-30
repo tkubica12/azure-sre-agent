@@ -33,10 +33,11 @@ labctl demo trigger bad-deployment
 ```
 
 This creates a new immutable revision from the same image with
-`DEMO_FAILURE_MODE=checkout-500`, shifts 100% of traffic to it, drives bounded
-synthetic checkout load, and polls the real `alert-pulsemart-checkout-5xx`
-metric alert for a Fired transition (honest expected window: 1-6 minutes,
-since the rule evaluates every 1 minute over a trailing 5-minute window).
+an altered payment-gateway profile, shifts 100% of traffic to it, drives
+bounded synthetic checkout load, and polls the real
+`alert-pulsemart-containerapp-5xx` metric alert for a Fired transition (honest
+expected window: 1-6 minutes, since the rule evaluates every 1 minute over a
+trailing 5-minute window).
 `trigger` prints the exact revision name, traffic change, and load statistics
 it produced, and never fails silently if the alert has not fired within the
 bounded deadline — it reports what it actually observed and continues.
@@ -67,7 +68,7 @@ landed in the Azure Activity Log seconds after the tool call, with nobody
 clicking anything, even on a freshly created thread confirmed
 `agentMode: Review` and after removing the agent UAMI's "SRE Agent
 Administrator" role. Rather than continue to describe a Review-mode gate
-that does not work, the `checkout-5xx` response plan is now honestly
+that does not work, the `containerapp-5xx` response plan is now honestly
 configured `agentMode: Autonomous`
 (`agent/automations/incident-filters/checkout-5xx.yaml`), and
 `rollback-advisor` holds `RunAzCliWriteCommands` again
@@ -160,7 +161,7 @@ idempotent.
   incident thread stays stuck at `investigationStatus: Complete`/`resolved`
   from an earlier rehearsal: incidents merge into the same thread for any
   alert firing within 3 hours of the previous one (`mergeWindowHours: 3` on
-  the `checkout-5xx` response plan), and a merged/reactivated thread does
+  the `containerapp-5xx` response plan), and a merged/reactivated thread does
   **not** re-run automated investigation once it has already completed one —
   live-verified 2026-07-29. Rehearsing this scenario more than once inside a
   3-hour window is expected to reuse the same thread and may not show fresh
@@ -178,4 +179,3 @@ idempotent.
   than the agent's own narrative text.
 - No portal "Approve" click is needed or expected for this scenario's Act
   step; the agent executes the rollback itself (see Step 4).
-

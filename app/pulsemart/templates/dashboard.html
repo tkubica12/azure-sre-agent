@@ -96,7 +96,7 @@
 <body>
 <header>
   <h1>PulseMart</h1>
-  <span class="badge" id="env-badge">&hellip;</span>
+  <span class="badge">Live telemetry</span>
 </header>
 <main>
   <section aria-labelledby="status-heading">
@@ -105,7 +105,6 @@
       <dt>Health</dt><dd id="f-health">checking&hellip;</dd>
       <dt>Release</dt><dd id="f-release">&ndash;</dd>
       <dt>Revision</dt><dd id="f-revision">&ndash;</dd>
-      <dt>Environment</dt><dd id="f-environment">&ndash;</dd>
       <dt>Uptime</dt><dd id="f-uptime">&ndash;</dd>
     </dl>
   </section>
@@ -117,7 +116,7 @@
     <div id="checkout-result" role="status" aria-live="polite"></div>
   </section>
 </main>
-<footer>PulseMart &middot; synthetic demo workload &middot; no customer data</footer>
+<footer>PulseMart &middot; synthetic workload &middot; no customer data</footer>
 <script>
 (function () {
   "use strict";
@@ -132,9 +131,7 @@
       .then(function (data) {
         setText("f-release", data.release);
         setText("f-revision", data.revision);
-        setText("f-environment", data.environment);
         setText("f-uptime", data.uptime_seconds + "s");
-        document.getElementById("env-badge").textContent = data.environment;
       })
       .catch(function () {
         setText("f-release", "unavailable");

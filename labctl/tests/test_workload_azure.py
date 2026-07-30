@@ -80,7 +80,7 @@ def test_containerapp_update_image_uses_replace_env_vars(result_factory) -> None
         "rg-workload",
         image="myregistry.azurecr.io/pulsemart:abc123-def456",
         revision_suffix="baseline-abc123-def456",
-        env_vars={"DEMO_FAILURE_MODE": "", "PULSEMART_RELEASE": "abc123-def456"},
+        env_vars={"PAYMENT_GATEWAY_PROFILE": "standard", "PULSEMART_RELEASE": "abc123-def456"},
         runner=runner,
     )
 
@@ -90,7 +90,7 @@ def test_containerapp_update_image_uses_replace_env_vars(result_factory) -> None
     assert "--revision-suffix" in args
     assert "baseline-abc123-def456" in args
     assert "--replace-env-vars" in args
-    assert "DEMO_FAILURE_MODE=" in args
+    assert "PAYMENT_GATEWAY_PROFILE=standard" in args
     assert "PULSEMART_RELEASE=abc123-def456" in args
 
 

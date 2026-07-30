@@ -1,6 +1,6 @@
 {
-  "_description": "Expected Azure SRE Agent data-plane content for the PulseMart checkout-failure demo. Used by `labctl verify`/`labctl status` (Milestone 4) to confirm every item in agent/ actually exists on the live agent, mirroring the official microsoft/sre-agent template's recipes/*/expected-config.json convention.",
-  "_scenario": "pulsemart-checkout-5xx",
+  "_description": "Expected Azure SRE Agent data-plane content for the PulseMart Container App 5xx demo. Used by `labctl verify`/`labctl status` (Milestone 4) to confirm every item in agent/ actually exists on the live agent, mirroring the official microsoft/sre-agent template's recipes/*/expected-config.json convention.",
+  "_scenario": "pulsemart-containerapp-5xx",
 
   "agent": {
     "incidentPlatform": "AzMonitor"
@@ -37,7 +37,7 @@
   ],
 
   "responsePlans": [
-    { "name": "checkout-5xx", "handlingAgent": "incident-investigator" }
+    { "name": "containerapp-5xx", "handlingAgent": "incident-investigator" }
   ],
 
   "repos": [

@@ -27,7 +27,7 @@ alone -- both application behavior and telemetry must confirm it.
   100% on the known-good revision, or the intended target split).
 - **Telemetry check:** most recent Application Insights `requests` for
   `POST /api/checkout` showing `success == true`, with timestamp.
-- **Alert state:** whether `alert-pulsemart-checkout-5xx` has resolved, or
+- **Alert state:** whether `alert-pulsemart-containerapp-5xx` has resolved, or
   the most recent evaluation window with no qualifying 5xx responses.
 
 ## Outcome
@@ -38,7 +38,7 @@ failing and what the next recommended step is.
 
 ## Follow-up / durable knowledge
 
-Note anything worth carrying forward for next time: a new pattern to add to
-`checkout-500-runbook.md`, a scheduled check that would have caught this
+Note anything worth carrying forward for next time: a new diagnostic pattern to
+add to `checkout-500-runbook.md`, a scheduled check that would have caught this
 sooner, or an automation opportunity (see the `daily-reliability-summary`
 scheduled task).

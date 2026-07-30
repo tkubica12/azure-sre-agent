@@ -8,9 +8,13 @@ spec:
     - Always identify the Container App revision(s) currently carrying
     traffic and their creation time before proposing a root cause.
 
-    - Distinguish "checkout is failing" from "the service is down": always
-    check `GET /healthz` first, since it stays healthy during the
-    checkout-500 fault.
+    - Ignore legacy workspace memory files from earlier rehearsals. Treat
+    current Azure resource state, current telemetry, and the uploaded runbook
+    as authoritative when they conflict with stale memory.
+
+    - Distinguish "an operation is failing" from "the service is down": always
+    check `GET /healthz` first, since it stays healthy during the bad-
+    deployment scenario.
 
     - Cite the specific Application Insights, Log Analytics, or source
     evidence for every claim; never state a root cause without it.

@@ -15,11 +15,14 @@ import socket
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-#: The only supported non-empty value for DEMO_FAILURE_MODE today. Any other
-#: non-empty value is rejected at startup so a typo cannot silently produce a
-#: healthy app when a failure was intended, or vice versa.
-FAILURE_MODE_CHECKOUT_500 = "checkout-500"
-SUPPORTED_FAILURE_MODES = frozenset({"", FAILURE_MODE_CHECKOUT_500})
+#: Supported payment-gateway profiles. Any unsupported value is rejected at
+#: startup so a typo cannot silently produce a healthy app when a checkout
+#: regression was intended, or vice versa.
+PAYMENT_GATEWAY_PROFILE_STANDARD = "standard"
+PAYMENT_GATEWAY_PROFILE_LEGACY_ACQUIRER = "legacy-acquirer"
+SUPPORTED_PAYMENT_GATEWAY_PROFILES = frozenset(
+    {PAYMENT_GATEWAY_PROFILE_STANDARD, PAYMENT_GATEWAY_PROFILE_LEGACY_ACQUIRER}
+)
 
 
 class Settings(BaseSettings):
@@ -41,33 +44,34 @@ class Settings(BaseSettings):
     container_app_revision: str = ""
     container_app_name: str = ""
 
-    # The demo's single, non-public fault switch. Never exposed through any
-    # HTTP endpoint; it can only be set via Container Apps revision
-    # configuration by an authenticated operator (see AGENTS.md).
-    demo_failure_mode: str = ""
+    # Non-public payment dependency profile. Never exposed through any HTTP
+    # endpoint; it can only be set via Container Apps revision configuration
+    # by an authenticated operator (see AGENTS.md).
+    payment_gateway_profile: str = PAYMENT_GATEWAY_PROFILE_STANDARD
 
     pulsemart_log_level: str = "INFO"
 
     def revision(self) -> str:
         return self.container_app_revision or socket.gethostname()
 
-    def failure_mode_active(self) -> bool:
-        return self.demo_failure_mode == FAILURE_MODE_CHECKOUT_500
+    def payment_gateway_regression_active(self) -> bool:
+        return self.payment_gateway_profile == PAYMENT_GATEWAY_PROFILE_LEGACY_ACQUIRER
 
 
 def load_settings() -> Settings:
     settings = Settings()
-    if settings.demo_failure_mode not in SUPPORTED_FAILURE_MODES:
+    if settings.payment_gateway_profile not in SUPPORTED_PAYMENT_GATEWAY_PROFILES:
         raise ValueError(
-            f"Unsupported DEMO_FAILURE_MODE={settings.demo_failure_mode!r}. "
-            f"Supported values: {sorted(SUPPORTED_FAILURE_MODES)!r}."
+            f"Unsupported PAYMENT_GATEWAY_PROFILE={settings.payment_gateway_profile!r}. "
+            f"Supported values: {sorted(SUPPORTED_PAYMENT_GATEWAY_PROFILES)!r}."
         )
     return settings
 
 
 __all__ = [
-    "FAILURE_MODE_CHECKOUT_500",
-    "SUPPORTED_FAILURE_MODES",
+    "PAYMENT_GATEWAY_PROFILE_LEGACY_ACQUIRER",
+    "PAYMENT_GATEWAY_PROFILE_STANDARD",
+    "SUPPORTED_PAYMENT_GATEWAY_PROFILES",
     "Settings",
     "load_settings",
 ]

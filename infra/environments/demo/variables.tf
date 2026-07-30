@@ -62,7 +62,7 @@ variable "tags" {
 }
 
 variable "alert_notification_email" {
-  description = "Optional operator email address for the checkout-failure action group. Left empty by default; see infra/modules/alerting and AGENTS.md 'no-secret action group'."
+  description = "Optional operator email address for the workload alert action group. Left empty by default; see infra/modules/alerting and AGENTS.md 'no-secret action group'."
   type        = string
   default     = ""
 }
@@ -74,7 +74,7 @@ variable "log_retention_days" {
 }
 
 variable "alert_threshold_5xx" {
-  description = "Minimum total HTTP 5xx checkout requests within the alert window that fires the demo's Azure Monitor alert."
+  description = "Minimum total Container App HTTP 5xx requests within the alert window that fires the demo's Azure Monitor alert."
   type        = number
   default     = 3
 }

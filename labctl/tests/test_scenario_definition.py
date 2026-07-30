@@ -15,9 +15,12 @@ MINIMAL_DOCUMENT: dict[str, object] = {
     "title": "Bad deployment",
     "summary": "A summary.",
     "estimated_duration_minutes": 15,
-    "fault": {"env": {"DEMO_FAILURE_MODE": "checkout-500"}, "revision_suffix_prefix": "fault"},
+    "fault": {
+        "env": {"PAYMENT_GATEWAY_PROFILE": "legacy-acquirer"},
+        "revision_suffix_prefix": "fault",
+    },
     "alert": {
-        "name": "alert-pulsemart-checkout-5xx",
+        "name": "alert-pulsemart-containerapp-5xx",
         "expected_time_to_fire_minutes": [1, 6],
         "max_wait_seconds": 480,
         "poll_interval_seconds": 15,
@@ -30,9 +33,9 @@ MINIMAL_DOCUMENT: dict[str, object] = {
     },
     "checks": {"fault_active": ["checkout_returns_500"], "recovered": ["checkout_returns_200"]},
     "incident": {
-        "response_plan": "checkout-5xx",
+        "response_plan": "containerapp-5xx",
         "handling_subagent": "incident-investigator",
-        "title_contains": "checkout",
+        "title_contains": "pulsemart",
         "severity": "Sev2",
     },
 }
@@ -43,13 +46,13 @@ def test_parse_scenario_definition_reads_every_section() -> None:
 
     assert scenario.slug == "bad-deployment"
     assert scenario.title == "Bad deployment"
-    assert scenario.fault.env == {"DEMO_FAILURE_MODE": "checkout-500"}
+    assert scenario.fault.env == {"PAYMENT_GATEWAY_PROFILE": "legacy-acquirer"}
     assert scenario.fault.revision_suffix_prefix == "fault"
-    assert scenario.alert.name == "alert-pulsemart-checkout-5xx"
+    assert scenario.alert.name == "alert-pulsemart-containerapp-5xx"
     assert scenario.alert.expected_time_to_fire_minutes == (1, 6)
     assert scenario.load.request_count == 40
     assert scenario.load.min_failures_required == 6
-    assert scenario.incident.title_contains == "checkout"
+    assert scenario.incident.title_contains == "pulsemart"
     assert scenario.checks["fault_active"] == ("checkout_returns_500",)
 
 
@@ -102,8 +105,8 @@ def test_load_scenario_definition_reads_the_real_shipped_scenario() -> None:
     scenario = load_scenario_definition(config, "bad-deployment")
 
     assert scenario.slug == "bad-deployment"
-    assert scenario.fault.env.get("DEMO_FAILURE_MODE") == "checkout-500"
-    assert scenario.incident.title_contains == "checkout"
+    assert scenario.fault.env.get("PAYMENT_GATEWAY_PROFILE") == "legacy-acquirer"
+    assert scenario.incident.title_contains == "pulsemart"
 
 
 def _real_repo_root():

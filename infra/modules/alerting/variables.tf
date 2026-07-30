@@ -19,7 +19,7 @@ variable "action_group_short_name" {
 }
 
 variable "notification_email" {
-  description = "Optional operator email address for alert notifications. Left empty by default so the action group carries no operator-specific contact information; the alert still fires and is visible in the Azure portal and to the Azure SRE Agent (Milestone 3) without it."
+  description = "Optional operator email address for alert notifications. Left empty by default so the action group carries no operator-specific contact information; the Container App 5xx alert still fires and is visible in the Azure portal and to the Azure SRE Agent (Milestone 3) without it."
   type        = string
   default     = ""
 }
@@ -46,7 +46,7 @@ variable "severity" {
 }
 
 variable "threshold" {
-  description = "Minimum total HTTP 5xx request count within `window_size` that fires the alert. Kept low and deterministic for a live demo (see AGENTS.md 'short deterministic threshold/evaluation suitable for a demo')."
+  description = "Minimum total Container App HTTP 5xx request count within `window_size` that fires the alert. Kept low and deterministic for a live demo (see AGENTS.md 'short deterministic threshold/evaluation suitable for a demo')."
   type        = number
   default     = 3
 }

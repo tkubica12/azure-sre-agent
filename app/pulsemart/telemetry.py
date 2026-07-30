@@ -38,8 +38,6 @@ TRACER_NAME = "pulsemart.checkout"
 _LOG_RECORD_EXTRA_FIELDS = (
     "release",
     "revision",
-    "environment",
-    "failure_mode",
     "order_id",
 )
 
@@ -47,9 +45,9 @@ _LOG_RECORD_EXTRA_FIELDS = (
 def configure_logging(settings: Settings) -> logging.Logger:
     """Configure structured JSON logging to stdout.
 
-    Every record carries release/revision/environment/failure-mode context
-    so a log line is diagnosable on its own, without joining back to trace
-    context, matching AGENTS.md's requirement for structured JSON logs.
+    Every record carries release/revision context so a log line is diagnosable
+    on its own, without joining back to trace context, matching AGENTS.md's
+    requirement for structured JSON logs.
     """
 
     handler = logging.StreamHandler(stream=sys.stdout)
@@ -61,7 +59,6 @@ def configure_logging(settings: Settings) -> logging.Logger:
             "service": SERVICE_NAME,
             "release": settings.pulsemart_release,
             "revision": settings.revision(),
-            "environment": settings.pulsemart_environment,
         },
     )
     handler.setFormatter(formatter)
@@ -94,8 +91,6 @@ def configure_telemetry(settings: Settings) -> Tracer:
             "service.name": SERVICE_NAME,
             "service.version": settings.pulsemart_release,
             "service.instance.id": settings.revision(),
-            "deployment.environment": settings.pulsemart_environment,
-            "demo.failure_mode": settings.demo_failure_mode or "none",
         }
     )
 

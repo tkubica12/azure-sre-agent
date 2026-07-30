@@ -14,7 +14,7 @@ spec:
     # NOTE (product-owner decision, 2026-07-30 -- see PLAN.md Milestone 5
     # "Act beat rework" and SPEC.md section 5 Scene 5): this hook is kept as
     # documented, currently-inert intent, not as an operative control. The
-    # `checkout-5xx` response plan is deliberately configured
+    # `containerapp-5xx` response plan is deliberately configured
     # `agentMode: Autonomous` (see
     # `agent/automations/incident-filters/checkout-5xx.yaml`) because that
     # honestly matches the observed behavior below -- claiming `Review` here
