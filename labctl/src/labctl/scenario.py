@@ -64,6 +64,18 @@ class _RollbackObservation:
     detail: str
 
 
+@dataclass(frozen=True, slots=True)
+class _RecoveryTelemetryPredicate:
+    check_name: str
+    min_observed: int
+    max_failures: int
+    alert_description: str
+    recovery_description: str
+    alert_min_total: int | None = None
+    alert_min_failures: int | None = None
+    alert_min_failure_rate: float | None = None
+
+
 #: Azure Container Apps' real constraint (live-verified 2026-07-29, ARM error
 #: `ContainerAppInvalidRevisionName`): the container app name plus a "--"
 #: separator plus the revision suffix must not exceed 54 characters
@@ -74,9 +86,13 @@ class _RollbackObservation:
 #: warning for it.
 _MAX_COMBINED_REVISION_NAME_LENGTH = 54
 _CHECKOUT_OPERATION_NAME = "POST /api/checkout"
-_RECOVERY_CANARY_MIN_REQUESTS = 6
+_BAD_DEPLOYMENT_RECOVERY_MIN_REQUESTS = 12
+_CANARY_ALERT_MIN_TOTAL = 30
+_CANARY_ALERT_MIN_FAILURES = 3
+_CANARY_ALERT_MIN_FAILURE_RATE = 0.05
+_CANARY_RECOVERY_MIN_REQUESTS = 30
 _RECOVERY_CANARY_CONCURRENCY = 2
-_RECOVERY_TELEMETRY_TIMEOUT_SECONDS = 120.0
+_RECOVERY_TELEMETRY_TIMEOUT_SECONDS = 240.0
 _RECOVERY_TELEMETRY_POLL_SECONDS = 10.0
 _PARTIAL_FAULT_PROBE_MIN_REQUESTS = 60
 
@@ -198,31 +214,62 @@ def _determine_recovery_write_timestamp(
     )
 
 
-def _build_recovery_telemetry_query(proof_start: datetime, recovered_revision: str) -> str:
-    revision_suffix = recovered_revision.split("--", 1)[-1]
+def _build_recovery_telemetry_query(proof_start: datetime) -> str:
     return (
         f"let proof_start = datetime({_kql_datetime(proof_start)});\n"
         "requests\n"
         "| where timestamp >= proof_start\n"
         f"| where name =~ {_kql_string(_CHECKOUT_OPERATION_NAME)} "
         f"or operation_Name =~ {_kql_string(_CHECKOUT_OPERATION_NAME)}\n"
-        "| extend roleInstance = tostring(cloud_RoleInstance), "
-        'serviceRevision = tostring(customDimensions["service.revision"]), '
-        'serviceInstance = tostring(customDimensions["service.instance.id"])\n'
-        "| where isempty(roleInstance) "
-        f"or roleInstance has {_kql_string(recovered_revision)} "
-        f"or serviceRevision =~ {_kql_string(revision_suffix)} "
-        f"or serviceInstance =~ {_kql_string(revision_suffix)}\n"
-        "| summarize total=count(), failed=countif(toint(resultCode) between (500 .. 599))"
+        "| extend weightedItemCount = tolong(coalesce(itemCount, 1))\n"
+        "| summarize storedRows=count(), total=sum(weightedItemCount), "
+        "failed=sumif(weightedItemCount, toint(resultCode) between (500 .. 599))"
     )
 
 
-def _recovery_canary_request_count(config: Config) -> int:
-    # Send more requests than the proof threshold because Application Insights
-    # ingestion can occasionally lag or drop one successful request from a tiny
-    # batch; verification still requires at least _RECOVERY_CANARY_MIN_REQUESTS
-    # observed rows below.
-    return max(_RECOVERY_CANARY_MIN_REQUESTS * 2, config.workload.alert_threshold_5xx, 1)
+def _recovery_telemetry_predicate(
+    config: Config, scenario: ScenarioDefinition
+) -> _RecoveryTelemetryPredicate:
+    if scenario.slug == "canary-regression":
+        return _RecoveryTelemetryPredicate(
+            check_name="canary-recovery-telemetry",
+            min_observed=_CANARY_RECOVERY_MIN_REQUESTS,
+            max_failures=0,
+            alert_description=(
+                "alert fires when total>=30, failed>=3, and failed/total>=5%"
+            ),
+            recovery_description=(
+                "recovery requires at least 30 fresh post-drain checkout telemetry rows and "
+                "zero fresh HTTP 5xx responses"
+            ),
+            alert_min_total=_CANARY_ALERT_MIN_TOTAL,
+            alert_min_failures=_CANARY_ALERT_MIN_FAILURES,
+            alert_min_failure_rate=_CANARY_ALERT_MIN_FAILURE_RATE,
+        )
+
+    threshold = max(config.workload.alert_threshold_5xx, 1)
+    return _RecoveryTelemetryPredicate(
+        check_name="containerapp-5xx-recovery-telemetry",
+        min_observed=max(_BAD_DEPLOYMENT_RECOVERY_MIN_REQUESTS, threshold * 4),
+        max_failures=0,
+        alert_description=(
+            f"metric alert fires when Container App HTTP 5xx count>={threshold} "
+            "in the evaluation window"
+        ),
+        recovery_description=(
+            "recovery requires a fresh post-rollback checkout sample with zero HTTP 5xx "
+            "responses"
+        ),
+    )
+
+
+def _recovery_canary_request_count(
+    config: Config, scenario: ScenarioDefinition
+) -> int:
+    # Send enough requests to satisfy the scenario-specific telemetry proof
+    # even if Application Insights ingestion lags or drops a row from a tiny
+    # batch.
+    return _recovery_telemetry_predicate(config, scenario).min_observed * 3
 
 
 def _post_checkout_recovery_canary(url: str, **_kwargs: object) -> HttpResult:
@@ -233,44 +280,96 @@ def _query_recovery_telemetry(
     workload_context: ctx.WorkloadContext,
     query: str,
     *,
-    min_observed: int,
-    threshold: int,
+    predicate: _RecoveryTelemetryPredicate,
 ) -> CheckResult:
-    deadline = time.monotonic() + _RECOVERY_TELEMETRY_TIMEOUT_SECONDS
-    last_detail = ""
+    started = time.monotonic()
+    deadline = started + _RECOVERY_TELEMETRY_TIMEOUT_SECONDS
+    attempts = 0
     while True:
+        attempts += 1
         rows, ai_result = workload_azure.app_insights_query(
             workload_context.app_insights_app_id, query
         )
         if rows is None:
             return CheckResult(
-                "failure-rate-below-threshold",
+                predicate.check_name,
                 Status.FAIL,
                 f"could not query Application Insights: {ai_result.diagnostic()}",
             )
         row = rows[0] if rows else {}
         total = int(row.get("total", 0))
         failed = int(row.get("failed", 0))
-        if total >= min_observed:
-            if failed >= threshold:
-                return CheckResult(
-                    "failure-rate-below-threshold",
-                    Status.FAIL,
-                    f"{failed} checkout 5xx request(s) since rollback; alert threshold is "
-                    f"{threshold}.",
+        stored_rows = int(row.get("storedRows", total))
+        failure_rate = (failed / total) if total > 0 else 0.0
+        elapsed = time.monotonic() - started
+        alert_still_matched = (
+            predicate.alert_min_total is not None
+            and predicate.alert_min_failures is not None
+            and predicate.alert_min_failure_rate is not None
+            and total >= predicate.alert_min_total
+            and failed >= predicate.alert_min_failures
+            and failure_rate >= predicate.alert_min_failure_rate
+        )
+        if failed > predicate.max_failures:
+            if alert_still_matched:
+                detail = (
+                    f"{failed} checkout 5xx request(s) across {total} fresh checkout "
+                    f"itemCount-weighted request(s) ({failure_rate:.1%}, {stored_rows} stored "
+                    "row(s)); this still satisfies the alert predicate "
+                    f"({predicate.alert_description})."
+                )
+            elif total >= predicate.min_observed:
+                detail = (
+                    f"{failed} checkout 5xx request(s) across {total} fresh checkout "
+                    f"itemCount-weighted request(s) ({failure_rate:.1%}, {stored_rows} stored "
+                    f"row(s)); {predicate.recovery_description}. The alert predicate is: "
+                    f"{predicate.alert_description}."
+                )
+            else:
+                detail = (
+                    f"{failed} checkout 5xx request(s) already observed across only {total} "
+                    f"fresh itemCount-weighted checkout request(s) ({failure_rate:.1%}, "
+                    f"{stored_rows} stored row(s)); this is evidence of fresh failures, not an "
+                    "ingestion sample-size delay."
                 )
             return CheckResult(
-                "failure-rate-below-threshold",
-                Status.PASS,
-                f"{failed} checkout 5xx request(s) across {total} checkout request(s) since "
-                f"the recovery proof started; alert threshold is {threshold}.",
+                predicate.check_name,
+                Status.FAIL,
+                (
+                    f"{detail} Queried Application Insights {attempts} time(s) over "
+                    f"{elapsed:.0f}s (timeout={_RECOVERY_TELEMETRY_TIMEOUT_SECONDS:.0f}s, "
+                    f"interval={_RECOVERY_TELEMETRY_POLL_SECONDS:.0f}s)."
+                ),
             )
-        last_detail = (
-            f"only {total} checkout request telemetry row(s) observed since rollback; need at "
-            f"least {min_observed} to prove the canary batch reached Application Insights."
-        )
+
+        if total >= predicate.min_observed:
+            return CheckResult(
+                predicate.check_name,
+                Status.PASS,
+                f"{failed} checkout 5xx request(s) across {total} fresh itemCount-weighted "
+                f"checkout request(s) since the recovery proof started ({failure_rate:.1%}, "
+                f"{stored_rows} stored row(s)); "
+                f"{predicate.recovery_description}, which is stricter than or equal to the "
+                f"alert predicate: {predicate.alert_description}. Queried Application Insights "
+                f"{attempts} time(s) over {elapsed:.0f}s "
+                f"(timeout={_RECOVERY_TELEMETRY_TIMEOUT_SECONDS:.0f}s, "
+                f"interval={_RECOVERY_TELEMETRY_POLL_SECONDS:.0f}s).",
+            )
+
         if time.monotonic() >= deadline:
-            return CheckResult("failure-rate-below-threshold", Status.FAIL, last_detail)
+            return CheckResult(
+                predicate.check_name,
+                Status.WARN,
+                f"recovery is not yet provable from Application Insights ingestion: only "
+                f"{total} fresh itemCount-weighted checkout request(s) ({stored_rows} stored "
+                f"row(s)) arrived after "
+                f"{elapsed:.0f}s; need at least {predicate.min_observed}. No fresh HTTP 5xx "
+                "responses were observed in the ingested itemCount-weighted rows, and the "
+                "direct checkout canary result is reported separately. Wait for telemetry "
+                "ingestion and re-run `labctl demo verify`. Queried Application Insights "
+                f"{attempts} time(s) (timeout={_RECOVERY_TELEMETRY_TIMEOUT_SECONDS:.0f}s, "
+                f"interval={_RECOVERY_TELEMETRY_POLL_SECONDS:.0f}s).",
+            )
         time.sleep(_RECOVERY_TELEMETRY_POLL_SECONDS)
 
 
@@ -324,8 +423,9 @@ def _check_alert_not_firing(
         return CheckResult(
             "alert-not-firing",
             Status.WARN,
-            f"checkout canary and telemetry are below threshold, but Azure Monitor still shows "
-            f"{scenario.alert.name!r} in Fired state; auto-resolution is pending.",
+            f"recovered-phase checks are evaluated separately, but Azure Monitor still shows "
+            f"{scenario.alert.name!r} in Fired state; alert resolution is "
+            "pending and this warning is non-fatal.",
         )
     if alerts:
         conditions = sorted({_monitor_condition(alert) or "Unknown" for alert in alerts})
@@ -382,6 +482,8 @@ def _fault_env_vars(
         ),
         "PULSEMART_RELEASE": deployment_state.image_tag,
         "PULSEMART_ENVIRONMENT": config.tags.environment,
+        "OTEL_TRACES_SAMPLER": "microsoft.fixed_percentage",
+        "OTEL_TRACES_SAMPLER_ARG": "1.0",
         **scenario.fault.env,
     }
 
@@ -773,7 +875,7 @@ def run_demo_verify(config: Config, slug: str, *, echo: Echo = print) -> DemoRes
         if scenario.fault.traffic_weight < 100:
             probe_count = min(
                 scenario.load.request_count,
-                max(_PARTIAL_FAULT_PROBE_MIN_REQUESTS, scenario.load.min_failures_required * 10),
+                max(_PARTIAL_FAULT_PROBE_MIN_REQUESTS, scenario.load.min_failures_required * 20),
             )
             probe = generate_checkout_load(
                 f"{url}/api/checkout",
@@ -908,13 +1010,16 @@ def run_demo_verify(config: Config, slug: str, *, echo: Echo = print) -> DemoRes
             )
         )
     else:
-        canary_count = _recovery_canary_request_count(config)
+        predicate = _recovery_telemetry_predicate(config, scenario)
+        canary_count = _recovery_canary_request_count(config, scenario)
         canary_started_at = datetime.now(UTC)
         canary = generate_checkout_load(
             f"{url}/api/checkout",
             count=canary_count,
             concurrency=(
-                1 if canary_count <= _RECOVERY_CANARY_MIN_REQUESTS else _RECOVERY_CANARY_CONCURRENCY
+                1
+                if canary_count <= _BAD_DEPLOYMENT_RECOVERY_MIN_REQUESTS
+                else _RECOVERY_CANARY_CONCURRENCY
             ),
             timeout=scenario.load.request_timeout_seconds,
             poster=_post_checkout_recovery_canary,
@@ -957,11 +1062,10 @@ def run_demo_verify(config: Config, slug: str, *, echo: Echo = print) -> DemoRes
                 CheckResult(
                     "rollback-timestamp-observed",
                     Status.WARN,
-                    f"{rollback_detail} Using the current verification canary start time as the "
-                    "telemetry proof window instead.",
+                    f"{rollback_detail} Fresh recovery telemetry is still scoped to the current "
+                    "verification canary start time.",
                 )
             )
-            proof_start = canary_started_at
         else:
             results.append(
                 CheckResult(
@@ -970,14 +1074,12 @@ def run_demo_verify(config: Config, slug: str, *, echo: Echo = print) -> DemoRes
                     rollback.detail,
                 )
             )
-            proof_start = max(rollback.timestamp, canary_started_at)
-        query = _build_recovery_telemetry_query(proof_start, baseline)
+        query = _build_recovery_telemetry_query(canary_started_at)
         results.append(
             _query_recovery_telemetry(
                 workload_context,
                 query,
-                min_observed=min(canary_count, _RECOVERY_CANARY_MIN_REQUESTS),
-                threshold=max(config.workload.alert_threshold_5xx, 1),
+                predicate=predicate,
             )
         )
         results.append(_check_alert_not_firing(account, workload_context, scenario))

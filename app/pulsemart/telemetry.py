@@ -112,6 +112,7 @@ def configure_telemetry(settings: Settings) -> Tracer:
         configure_azure_monitor(
             resource=resource,
             logger_name=SERVICE_NAME,
+            sampling_ratio=1.0,
             instrumentation_options={"fastapi": {"enabled": False}},
         )
     else:

@@ -99,8 +99,9 @@ This proves read-only investigation before any incident.
 ### Scene 3: Bad deployment
 
 `labctl demo trigger bad-deployment` creates a new Container Apps revision from
-the same immutable image with a controlled `DEMO_FAILURE_MODE=checkout-500`
-configuration and shifts production traffic to it.
+the same immutable image with a controlled
+`PAYMENT_GATEWAY_PROFILE=legacy-acquirer` configuration and shifts production
+traffic to it.
 
 The Container App runs in Multiple revision mode. The known-good and failing
 revisions remain available concurrently, and scenario control changes explicit
@@ -108,7 +109,10 @@ traffic weights rather than replacing the application resource.
 
 The fault:
 
-- returns HTTP 500 for checkout requests;
+- returns HTTP 500 for checkout requests with response body
+  `payment authorization temporarily unavailable`;
+- logs `checkout failed: upstream payment gateway returned HTTP 502 Bad Gateway
+  while authorizing the charge`;
 - emits structured errors, exceptions, trace attributes, release metadata, and
   revision metadata;
 - leaves health and administrative endpoints available;
@@ -116,7 +120,8 @@ The fault:
 - is reversible by shifting traffic back to the known-good revision.
 
 `labctl` drives enough synthetic checkout traffic to cross the real alert
-threshold.
+threshold. The alert rule is `alert-pulsemart-containerapp-5xx`, and the
+response plan is `containerapp-5xx`.
 
 ### Scene 4: Automated incident investigation
 
@@ -136,9 +141,10 @@ The agent must:
 ### Scene 5: Autonomous-mode remediation, tool-scoped
 
 The agent runs with High access. The agent-wide `actionConfiguration.mode`
-stays at its documented default of `Review`, but the `checkout-5xx` incident
-response plan is configured `agentMode: Autonomous`
-(`agent/automations/incident-filters/checkout-5xx.yaml`) -- a product-owner
+stays at its documented default of `Review`, but the `containerapp-5xx`
+incident response plan is configured `agentMode: Autonomous`
+(`agent/automations/incident-filters/checkout-5xx.yaml`, metadata name
+`containerapp-5xx`) -- a product-owner
 decision, 2026-07-30, made because **live-tested 2026-07-29, three
 independent cycles** (see PLAN.md Milestone 5 for the full evidence trail,
 including a run on a freshly created incident thread whose own `agentMode`
@@ -158,7 +164,7 @@ repository chooses to be honest about which mode is actually in effect
 instead.
 
 **The agent itself executes the real rollback.** `rollback-advisor` (the
-subagent the `checkout-5xx` response plan hands remediation to) states the
+subagent the `containerapp-5xx` response plan hands remediation to) states the
 exact `az containerapp ingress traffic set` command it is about to run, then
 runs it for real under its own managed identity, then verifies and reports
 recovery. The presenter's role in this beat is to narrate the agent's stated
@@ -204,11 +210,64 @@ performed the real mitigation.
 
 - the application user journey succeeds;
 - production traffic targets the known-good revision;
-- failure rate returns below threshold;
-- the alert resolves or recovery telemetry is present;
-- the agent investigation contains a remediation summary.
+- `labctl` sends three times the telemetry floor as fresh checkout requests,
+  polls Application Insights for bounded ingestion, and reports recovery as
+  proved only when the fresh, `itemCount`-weighted Application Insights total is
+  at least 12 post-rollback checkout requests with zero `itemCount`-weighted
+  HTTP 5xx responses. That is stricter than the Container App metric alert's
+  firing condition of at least three HTTP 5xx responses in the evaluation
+  window. If successful live checkouts are visible but ingestion has not reached
+  12 weighted requests before the timeout, the telemetry proof is reported as
+  pending rather than as a service regression;
+- the alert is either resolved or explicitly reported as a non-fatal pending
+  Azure Monitor resolution after service recovery is proved.
 
-### Scene 7: Broader feature tour
+### Scene 7: Canary regression
+
+`labctl demo trigger canary-regression` creates a new Container Apps revision
+from the same immutable image with
+`CHECKOUT_PRICING_PROFILE=strict-decimal` and sends about 10% of production
+traffic to it while the stable revision continues serving the other traffic.
+
+The fault:
+
+- fails checkout pricing only on the canary revision;
+- leaves the stable revision healthy;
+- produces mixed checkout success and failure signals instead of a total outage;
+- is reversible by draining only the canary revision back to 0% traffic.
+
+The dedicated Application Insights scheduled-query alert
+`alert-pulsemart-canary-regression` evaluates checkout requests and fires when
+`total >= 30`, `failed >= 3`, and `failed / total >= 0.05` within the alert
+window.
+
+The agent must:
+
+- recognize a partial degradation rather than a full checkout outage;
+- attribute failures to the canary revision using telemetry dimensions and
+  Container Apps revision state;
+- quantify blast radius from the traffic split and observed request outcomes;
+- recommend or execute a targeted drain of only the canary while preserving the
+  stable revision.
+
+`labctl demo verify canary-regression` confirms:
+
+- while the fault is active, mixed checkout success and failure are observed and
+  a non-baseline revision is receiving traffic;
+- after recovery, production traffic is 100% on the known-good revision;
+- `labctl` sends three times the telemetry floor as fresh checkout requests,
+  polls Application Insights for bounded ingestion, and reports recovery as
+  proved only when the fresh, `itemCount`-weighted Application Insights total is
+  at least 30 post-drain checkout requests with zero `itemCount`-weighted HTTP
+  5xx responses. That is stricter than the alert's `total >= 30`, `failed >= 3`,
+  and `failed / total >= 0.05` firing predicate, which is also expressed with
+  `itemCount`-weighted counts. If successful live checkouts are visible but
+  ingestion has not reached 30 weighted requests before the timeout, the
+  telemetry proof is reported as pending rather than as a service regression;
+- a still-Fired Azure Monitor alert is reported as a warning because live
+  auto-resolution can lag service recovery.
+
+### Scene 8: Broader feature tour
 
 Reuse the environment to show:
 
@@ -304,6 +363,14 @@ OpenTelemetry instrumentation sends:
 The image is built by `az acr build`; a local Docker daemon is not required.
 The image tag is derived from the Git commit plus a content hash so deployments
 are reproducible and inspectable.
+
+The workload disables Azure Monitor OpenTelemetry sampling for checkout traces
+(`OTEL_TRACES_SAMPLER=microsoft.fixed_percentage`,
+`OTEL_TRACES_SAMPLER_ARG=1.0`, and `sampling_ratio=1.0` in the distro setup).
+This low-traffic demo prefers complete request evidence over ingestion savings.
+Verification and alert queries still use Application Insights `itemCount` so
+their request totals and failure counts remain sampling-aware if sampling is
+ever reintroduced.
 
 The application does not expose a public fault-toggle endpoint. Scenario state
 changes only through authenticated Azure control-plane operations performed by
@@ -458,7 +525,7 @@ plausible vector regardless.
 The agent uses:
 
 - `accessLevel = High`;
-- `actionMode = Review`; (agent-wide default; the `checkout-5xx` response
+- `actionMode = Review`; (agent-wide default; the `containerapp-5xx` response
   plan overrides this to `agentMode: Autonomous` -- see section 5 Scene 5 --
   because live testing proved the agent-wide `Review` default does not, by
   itself, gate a mutating action inside an incident thread);
@@ -480,7 +547,7 @@ The agent uses:
 Version-controlled configuration includes:
 
 - architecture and service ownership knowledge;
-- a checkout HTTP 500 incident runbook;
+- a checkout failure incident runbook;
 - investigation and remediation-report templates;
 - an `incident-investigator` subagent (read-only -- structurally cannot
   mutate Azure; see section 5 Scene 5);
@@ -633,13 +700,17 @@ The implementation is accepted only when:
    `RunAzCliWriteCommands`) and a narrow, Container-App-scoped RBAC grant,
    and changes real Container Apps traffic. `labctl demo reset` remains a
    reliable operator safety net, not the mitigation step.
-7. Automated checks prove recovery.
-8. Reset allows the scenario to run again.
-9. Slides and guide are complete, accessible, and synchronized with the
+7. The canary-regression scenario creates a real partial degradation, fires the
+   dedicated Application Insights scheduled-query alert, and is recovered by
+   draining only the canary revision.
+8. Automated checks prove recovery with fresh successful checkout traffic and
+   scenario-specific telemetry predicates.
+9. Reset allows the scenario to run again.
+10. Slides and guide are complete, accessible, and synchronized with the
    automation.
-10. Independent architecture, SRE, clean-room, security, and presentation
-    reviews have no blocking or material findings.
-11. `labctl destroy` removes all owned resources and stops agent billing.
+11. Independent architecture, SRE, clean-room, security, and presentation
+   reviews have no blocking or material findings.
+12. `labctl destroy` removes all owned resources and stops agent billing.
 
 ## 16. Authoritative references
 

@@ -418,6 +418,8 @@ def run_deploy(
             "PULSEMART_RELEASE": image_tag,
             "PULSEMART_ENVIRONMENT": config.tags.environment,
             "PAYMENT_GATEWAY_PROFILE": "standard",
+            "OTEL_TRACES_SAMPLER": "microsoft.fixed_percentage",
+            "OTEL_TRACES_SAMPLER_ARG": "1.0",
         }
         update_result = workload_azure.containerapp_update_image(
             workload_context.container_app_name,

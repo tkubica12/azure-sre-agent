@@ -83,7 +83,7 @@ checks:
     - checkout_canary_batch
     - traffic_on_baseline_revision
     - rollback_timestamp_observed
-    - failure_rate_below_threshold
+    - containerapp_5xx_recovery_telemetry
     - alert_not_firing
 
 incident:

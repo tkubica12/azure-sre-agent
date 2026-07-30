@@ -65,6 +65,14 @@ resource "azurerm_container_app" "this" {
         name        = "APPLICATIONINSIGHTS_CONNECTION_STRING"
         secret_name = "app-insights-connection-string"
       }
+      env {
+        name  = "OTEL_TRACES_SAMPLER"
+        value = "microsoft.fixed_percentage"
+      }
+      env {
+        name  = "OTEL_TRACES_SAMPLER_ARG"
+        value = "1.0"
+      }
     }
   }
 

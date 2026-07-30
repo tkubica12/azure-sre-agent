@@ -599,7 +599,7 @@ def test_run_demo_verify_reports_recovered_phase_checks(monkeypatch, tmp_path) -
     monkeypatch.setattr(
         scenario_mod.workload_azure,
         "app_insights_query",
-        lambda *a, **k: ([{"total": 6, "failed": 0}], make_result()),
+        lambda *a, **k: ([{"total": 12, "failed": 0}], make_result()),
     )
     monkeypatch.setattr(
         scenario_mod.workload_azure,
@@ -632,6 +632,226 @@ def test_run_demo_verify_reports_recovered_phase_checks(monkeypatch, tmp_path) -
     result = scenario_mod.run_demo_verify(config, "bad-deployment", echo=lambda _m: None)
 
     assert result.exit_code == 0
+
+
+def test_run_demo_verify_reports_canary_recovered_phase_checks(monkeypatch, tmp_path) -> None:
+    _patch_common(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        scenario_mod, "load_scenario_definition", lambda config, slug: _canary_scenario()
+    )
+    config = make_config(tmp_path)
+    monkeypatch.setattr(scenario_mod.ctx, "load_agent_context", lambda config, **_kw: (None, None))
+    monkeypatch.setattr(
+        scenario_mod.workload_azure,
+        "containerapp_ingress_traffic_show",
+        lambda *a, **k: ([{"revisionName": BASELINE, "weight": 100}], make_result()),
+    )
+    monkeypatch.setattr(
+        scenario_mod.workload_azure,
+        "app_insights_query",
+        lambda *a, **k: ([{"storedRows": 10, "total": 30, "failed": 0}], make_result()),
+    )
+    monkeypatch.setattr(
+        scenario_mod.workload_azure,
+        "activity_log_list",
+        lambda *a, **k: (_activity_log_events(), make_result()),
+    )
+    monkeypatch.setattr(
+        scenario_mod.workload_azure,
+        "list_fired_alerts",
+        lambda *a, **k: (
+            [
+                {
+                    "properties": {
+                        "essentials": {
+                            "alertRule": "alert-pulsemart-canary-regression",
+                            "monitorCondition": "Resolved",
+                        }
+                    }
+                }
+            ],
+            make_result(),
+        ),
+    )
+    monkeypatch.setattr(
+        scenario_mod,
+        "generate_checkout_load",
+        lambda *a, **k: _successful_canary(count=60),
+    )
+
+    result = scenario_mod.run_demo_verify(config, "canary-regression", echo=lambda _m: None)
+
+    assert result.exit_code == 0
+
+
+def test_run_demo_verify_polls_until_canary_recovery_telemetry_sample_is_large_enough(
+    monkeypatch, tmp_path
+) -> None:
+    _patch_common(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        scenario_mod, "load_scenario_definition", lambda config, slug: _canary_scenario()
+    )
+    config = make_config(tmp_path)
+    rows = iter(([{"total": 28, "failed": 0}], [{"total": 30, "failed": 0}]))
+    output: list[str] = []
+    monkeypatch.setattr(scenario_mod.ctx, "load_agent_context", lambda config, **_kw: (None, None))
+    monkeypatch.setattr(
+        scenario_mod.workload_azure,
+        "containerapp_ingress_traffic_show",
+        lambda *a, **k: ([{"revisionName": BASELINE, "weight": 100}], make_result()),
+    )
+    monkeypatch.setattr(
+        scenario_mod.workload_azure,
+        "app_insights_query",
+        lambda *a, **k: (next(rows), make_result()),
+    )
+    monkeypatch.setattr(
+        scenario_mod.workload_azure,
+        "activity_log_list",
+        lambda *a, **k: (_activity_log_events(), make_result()),
+    )
+    monkeypatch.setattr(
+        scenario_mod.workload_azure,
+        "list_fired_alerts",
+        lambda *a, **k: ([], make_result()),
+    )
+    monkeypatch.setattr(
+        scenario_mod,
+        "generate_checkout_load",
+        lambda *a, **k: _successful_canary(count=90),
+    )
+    monkeypatch.setattr(scenario_mod.time, "sleep", lambda _seconds: None)
+
+    result = scenario_mod.run_demo_verify(config, "canary-regression", echo=output.append)
+
+    assert result.exit_code == 0
+    assert "Queried Application Insights 2 time(s)" in output[-1]
+    assert "itemCount-weighted" in output[-1]
+
+
+def test_run_demo_verify_warns_when_canary_recovery_sample_stays_too_small(
+    monkeypatch, tmp_path
+) -> None:
+    _patch_common(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        scenario_mod, "load_scenario_definition", lambda config, slug: _canary_scenario()
+    )
+    monkeypatch.setattr(scenario_mod, "_RECOVERY_TELEMETRY_TIMEOUT_SECONDS", 0.0)
+    config = make_config(tmp_path)
+    monkeypatch.setattr(scenario_mod.ctx, "load_agent_context", lambda config, **_kw: (None, None))
+    monkeypatch.setattr(
+        scenario_mod.workload_azure,
+        "containerapp_ingress_traffic_show",
+        lambda *a, **k: ([{"revisionName": BASELINE, "weight": 100}], make_result()),
+    )
+    monkeypatch.setattr(
+        scenario_mod.workload_azure,
+        "app_insights_query",
+        lambda *a, **k: ([{"total": 6, "failed": 0}], make_result()),
+    )
+    monkeypatch.setattr(
+        scenario_mod.workload_azure,
+        "activity_log_list",
+        lambda *a, **k: (_activity_log_events(), make_result()),
+    )
+    monkeypatch.setattr(
+        scenario_mod.workload_azure,
+        "list_fired_alerts",
+        lambda *a, **k: ([], make_result()),
+    )
+    monkeypatch.setattr(
+        scenario_mod,
+        "generate_checkout_load",
+        lambda *a, **k: _successful_canary(count=60),
+    )
+
+    output: list[str] = []
+
+    result = scenario_mod.run_demo_verify(config, "canary-regression", echo=output.append)
+
+    assert result.exit_code == 0
+    assert "recovery is not yet provable from Application Insights ingestion" in output[-1]
+    assert "1 warned" in output[-1]
+
+
+def test_run_demo_verify_fails_when_canary_recovery_has_any_fresh_5xx(
+    monkeypatch, tmp_path
+) -> None:
+    _patch_common(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        scenario_mod, "load_scenario_definition", lambda config, slug: _canary_scenario()
+    )
+    config = make_config(tmp_path)
+    monkeypatch.setattr(scenario_mod.ctx, "load_agent_context", lambda config, **_kw: (None, None))
+    monkeypatch.setattr(
+        scenario_mod.workload_azure,
+        "containerapp_ingress_traffic_show",
+        lambda *a, **k: ([{"revisionName": BASELINE, "weight": 100}], make_result()),
+    )
+    monkeypatch.setattr(
+        scenario_mod.workload_azure,
+        "app_insights_query",
+        lambda *a, **k: ([{"total": 60, "failed": 2}], make_result()),
+    )
+    monkeypatch.setattr(
+        scenario_mod.workload_azure,
+        "activity_log_list",
+        lambda *a, **k: (_activity_log_events(), make_result()),
+    )
+    monkeypatch.setattr(
+        scenario_mod.workload_azure,
+        "list_fired_alerts",
+        lambda *a, **k: ([], make_result()),
+    )
+    monkeypatch.setattr(
+        scenario_mod,
+        "generate_checkout_load",
+        lambda *a, **k: _successful_canary(count=60),
+    )
+
+    result = scenario_mod.run_demo_verify(config, "canary-regression", echo=lambda _m: None)
+
+    assert result.exit_code == 1
+
+
+def test_run_demo_verify_fails_when_canary_recovery_still_matches_alert_predicate(
+    monkeypatch, tmp_path
+) -> None:
+    _patch_common(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        scenario_mod, "load_scenario_definition", lambda config, slug: _canary_scenario()
+    )
+    config = make_config(tmp_path)
+    monkeypatch.setattr(scenario_mod.ctx, "load_agent_context", lambda config, **_kw: (None, None))
+    monkeypatch.setattr(
+        scenario_mod.workload_azure,
+        "containerapp_ingress_traffic_show",
+        lambda *a, **k: ([{"revisionName": BASELINE, "weight": 100}], make_result()),
+    )
+    monkeypatch.setattr(
+        scenario_mod.workload_azure,
+        "app_insights_query",
+        lambda *a, **k: ([{"total": 60, "failed": 3}], make_result()),
+    )
+    monkeypatch.setattr(
+        scenario_mod.workload_azure,
+        "activity_log_list",
+        lambda *a, **k: (_activity_log_events(), make_result()),
+    )
+    monkeypatch.setattr(
+        scenario_mod.workload_azure,
+        "list_fired_alerts",
+        lambda *a, **k: ([], make_result()),
+    )
+    monkeypatch.setattr(
+        scenario_mod,
+        "generate_checkout_load",
+        lambda *a, **k: _successful_canary(count=60),
+    )
+
+    result = scenario_mod.run_demo_verify(config, "canary-regression", echo=lambda _m: None)
+
+    assert result.exit_code == 1
 
 
 def test_run_demo_verify_fails_when_recovery_telemetry_query_is_unavailable(
@@ -690,7 +910,7 @@ def test_run_demo_verify_fails_when_recovery_telemetry_has_residual_alert_thresh
     monkeypatch.setattr(
         scenario_mod.workload_azure,
         "app_insights_query",
-        lambda *a, **k: ([{"total": 8, "failed": 3}], make_result()),
+        lambda *a, **k: ([{"total": 12, "failed": 3}], make_result()),
     )
     monkeypatch.setattr(
         scenario_mod.workload_azure,
@@ -706,6 +926,83 @@ def test_run_demo_verify_fails_when_recovery_telemetry_has_residual_alert_thresh
     result = scenario_mod.run_demo_verify(config, "bad-deployment", echo=lambda _m: None)
 
     assert result.exit_code == 1
+
+
+def test_run_demo_verify_fails_when_bad_deployment_recovery_has_any_fresh_5xx(
+    monkeypatch, tmp_path
+) -> None:
+    _patch_common(monkeypatch, tmp_path)
+    config = make_config(tmp_path)
+    monkeypatch.setattr(scenario_mod.ctx, "load_agent_context", lambda config, **_kw: (None, None))
+    monkeypatch.setattr(
+        scenario_mod.workload_azure,
+        "containerapp_ingress_traffic_show",
+        lambda *a, **k: ([{"revisionName": BASELINE, "weight": 100}], make_result()),
+    )
+    monkeypatch.setattr(
+        scenario_mod.workload_azure,
+        "activity_log_list",
+        lambda *a, **k: (_activity_log_events(), make_result()),
+    )
+    monkeypatch.setattr(
+        scenario_mod.workload_azure,
+        "app_insights_query",
+        lambda *a, **k: ([{"total": 12, "failed": 1}], make_result()),
+    )
+    monkeypatch.setattr(
+        scenario_mod.workload_azure,
+        "list_fired_alerts",
+        lambda *a, **k: ([], make_result()),
+    )
+    monkeypatch.setattr(
+        scenario_mod,
+        "generate_checkout_load",
+        lambda *a, **k: _successful_canary(count=12),
+    )
+
+    result = scenario_mod.run_demo_verify(config, "bad-deployment", echo=lambda _m: None)
+
+    assert result.exit_code == 1
+
+
+def test_run_demo_verify_warns_when_bad_deployment_recovery_sample_stays_too_small(
+    monkeypatch, tmp_path
+) -> None:
+    _patch_common(monkeypatch, tmp_path)
+    monkeypatch.setattr(scenario_mod, "_RECOVERY_TELEMETRY_TIMEOUT_SECONDS", 0.0)
+    config = make_config(tmp_path)
+    output: list[str] = []
+    monkeypatch.setattr(scenario_mod.ctx, "load_agent_context", lambda config, **_kw: (None, None))
+    monkeypatch.setattr(
+        scenario_mod.workload_azure,
+        "containerapp_ingress_traffic_show",
+        lambda *a, **k: ([{"revisionName": BASELINE, "weight": 100}], make_result()),
+    )
+    monkeypatch.setattr(
+        scenario_mod.workload_azure,
+        "activity_log_list",
+        lambda *a, **k: (_activity_log_events(), make_result()),
+    )
+    monkeypatch.setattr(
+        scenario_mod.workload_azure,
+        "app_insights_query",
+        lambda *a, **k: ([{"total": 11, "failed": 0}], make_result()),
+    )
+    monkeypatch.setattr(
+        scenario_mod.workload_azure,
+        "list_fired_alerts",
+        lambda *a, **k: ([], make_result()),
+    )
+    monkeypatch.setattr(
+        scenario_mod,
+        "generate_checkout_load",
+        lambda *a, **k: _successful_canary(count=36),
+    )
+
+    result = scenario_mod.run_demo_verify(config, "bad-deployment", echo=output.append)
+
+    assert result.exit_code == 0
+    assert "recovery is not yet provable from Application Insights ingestion" in output[-1]
 
 
 def test_run_demo_verify_warns_when_alert_resolution_is_still_pending(
@@ -728,7 +1025,7 @@ def test_run_demo_verify_warns_when_alert_resolution_is_still_pending(
     monkeypatch.setattr(
         scenario_mod.workload_azure,
         "app_insights_query",
-        lambda *a, **k: ([{"total": 6, "failed": 0}], make_result()),
+        lambda *a, **k: ([{"total": 12, "failed": 0}], make_result()),
     )
     monkeypatch.setattr(
         scenario_mod.workload_azure,

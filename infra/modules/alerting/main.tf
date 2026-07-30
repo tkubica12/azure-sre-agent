@@ -73,7 +73,8 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "canary_regression" {
     query = <<-KQL
       requests
       | where name =~ "POST /api/checkout" or operation_Name =~ "POST /api/checkout"
-      | summarize total=count(), failed=countif(toint(resultCode) between (500 .. 599))
+      | extend weightedItemCount = tolong(coalesce(itemCount, 1))
+      | summarize total=sum(weightedItemCount), failed=sumif(weightedItemCount, toint(resultCode) between (500 .. 599))
       | where total >= 30 and failed >= 3 and todouble(failed) / todouble(total) >= 0.05
     KQL
 
