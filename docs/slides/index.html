@@ -535,27 +535,35 @@
             configuration-driven deployment regression... This is not a code
             bug - it is a reversible configuration fault."</p>
         </div>
-        <p class="fragment">Honest caveat: this agent's own retained memory
-          still described the previous fault mechanism - it flagged that
-          itself and reasoned from live evidence instead. Details in the
-          guide.</p>
+        <p class="fragment">Honest caveat, now resolved further: this agent's
+          own retained memory once described the previous fault mechanism -
+          it flagged that itself and reasoned from live evidence instead. A
+          later clean-room run on a verified-fresh identity (zero retained
+          incident threads) reached the same correct conclusion, proving the
+          diagnosis does not depend on prior memory. Details in the guide.</p>
       </div>
       <div class="notes" hidden>
         <p>Read the real, live investigation from the portal every time -
           this excerpt is here so you know the calibre of evidence to expect
           and can quote it accurately, not as a substitute for watching it
-          happen live. Four real runs measured now, not three: alert-to-report
-          took ~4 minutes on two runs and 6-6.5 minutes on the other two - a
-          real, recurring pattern, not a one-off (root causes: occasional
-          failed CLI calls recovered via Resource Graph; the connected repo's
-          committed source does not contain the current fault mechanism
-          either, so the agent has to reconcile that mismatch every time).
-          See the guide's Investigate beat for exactly what to say if this
-          happens to you live, and for the honest memory-persistence caveat -
-          do not claim this was a completely clean-room diagnosis. Full
-          transcripts: scenarios/bad-deployment/evidence/act-beat-transcript-2026-07-30.md
-          (current fault mechanism) and the 2026-07-29 file/PLAN.md for the
-          three earlier runs under the previous mechanism.</p>
+          happen live. Four per-phase-instrumented runs measured, plus a
+          fifth clean-room confirmation: alert-to-report took ~4 minutes on
+          two runs and 6-6.5 minutes on the other two - a real, recurring
+          pattern, not a one-off (root causes: occasional failed CLI calls
+          recovered via Resource Graph; the connected repo's committed source
+          does not contain the current fault mechanism either, so the agent
+          has to reconcile that mismatch every time). See the guide's
+          Investigate beat for exactly what to say if this happens to you
+          live, and for the full memory-persistence caveat, now including the
+          clean-room identity-freshness proof - do not claim memory played no
+          role at all, but do say the earned-diagnosis claim no longer
+          depends on an untested assumption. Transcripts: the clean-room
+          scenarios/bad-deployment/evidence/act-beat-transcript-2026-07-30-cleanroom-bad-deployment.md
+          (verified-fresh identity, current fault mechanism),
+          scenarios/bad-deployment/evidence/act-beat-transcript-2026-07-30.md
+          (current fault mechanism, pre-cleanroom), and the 2026-07-29
+          file/PLAN.md for the three earliest runs under the previous
+          mechanism.</p>
       </div>
     </section>
 
@@ -790,9 +798,10 @@
             <li>Hooks: require-approval-for-changes, deny-destructive-deletes
               - documented intent, not the operative gate (see Act)</li>
             <li>Common prompts: investigation-guidelines, safety-rules</li>
-            <li>This incident's own knowledge, uploaded for the next one -
-              pending confirmed memory-search indexing before we call it
-              retained</li>
+            <li>This incident's own knowledge, written for next time -
+              memory retrieval is confirmed working, including across a
+              verified-fresh agent identity; it can still surface
+              context that is stale or irrelevant to the current incident</li>
           </ul>
         </div>
       </div>
@@ -937,21 +946,23 @@
         <table>
           <thead><tr><th>Revision</th><th>Failure rate</th></tr></thead>
           <tbody>
-            <tr class="fragment"><td>Baseline</td><td><strong>0%</strong> (340/340 succeeded)</td></tr>
-            <tr class="fragment"><td>Canary</td><td><strong>100%</strong> (38/38 failed)</td></tr>
+            <tr class="fragment"><td>Baseline</td><td><strong>0%</strong> (602/602 succeeded)</td></tr>
+            <tr class="fragment"><td>Canary</td><td><strong>100%</strong> (53/53 failed)</td></tr>
           </tbody>
         </table>
-        <p class="fragment">Blast radius, in the agent's own words: <em>"~7-12%
-          per minute, consistent with the canary's 10% traffic weight."</em></p>
+        <p class="fragment">Blast radius: <strong>8.1%</strong> (53 of 655
+          requests) - consistent with the canary's 10% traffic weight.</p>
       </div>
       <div class="notes" hidden>
         <p>This is the strongest single moment in this scene - lead with it.
-          Real numbers from a curated excerpt of the 2026-07-30 transcript
-          (not a complete raw export - the per-minute figure is the agent's
-          own stated estimate, not a result you can show a per-minute row
-          for), quoted in full in the guide. This per-revision partitioning is
-          exactly what bad-deployment cannot show, because it never has a
-          healthy revision to contrast against.</p>
+          Real numbers from a complete raw capture of a 2026-07-30 clean-room
+          run (actual KQL queries and the per-minute rows they returned, not
+          a curated excerpt), quoted in full in the guide. The agent's
+          attribution is corroborated by revision configuration
+          (<code>CHECKOUT_PRICING_PROFILE=strict-decimal</code> on the canary
+          only) plus telemetry, not telemetry alone. This per-revision
+          partitioning is exactly what bad-deployment cannot show, because it
+          never has a healthy revision to contrast against.</p>
       </div>
     </section>
 

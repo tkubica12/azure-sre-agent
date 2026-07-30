@@ -96,6 +96,15 @@
           <strong>&lt;your-subscription&gt;</strong>.</li>
         <li>GitHub CLI, logged in (<code>gh auth login</code>) with the
           <code>repo</code> scope.</li>
+        <li>Terraform <strong>exactly 1.10.1</strong> on <code>PATH</code>
+          (<code>infra/environments/demo/versions.tf</code> pins
+          <code>required_version = "= 1.10.1"</code>). A newer system-wide
+          Terraform is a real, live-observed failure mode: a repeat
+          <code>labctl deploy</code> failed outright when the machine's
+          Terraform had drifted to 1.15.8. If your machine has a different
+          version installed globally, download 1.10.1 and prepend its
+          directory to <code>PATH</code> for the session rather than
+          reinstalling system-wide.</li>
         <li><code>config.local.toml</code> present (copied from
           <code>config.example.toml</code>, git-ignored).</li>
       </ul>
@@ -246,7 +255,7 @@
           <tr><td>Why Azure SRE Agent</td><td>3 min</td><td>4 min</td><td>Pending rehearsal confirmation</td></tr>
           <tr><td>Architecture and controls</td><td>4 min</td><td>5 min</td><td>Pending rehearsal confirmation</td></tr>
           <tr><td>Healthy system exploration (Observe)</td><td>6 min</td><td>8 min</td><td>Pending rehearsal confirmation</td></tr>
-          <tr><td>Disrupt (trigger fault, wait for alert)</td><td>5 min</td><td>7 min</td><td>Measured, all four runs: trigger-to-fired took <strong>260s, 260s, 310s (5m10s), and 229s</strong> - the newest run (current fault mechanism) was the fastest; budget adds command/narration overhead on top of the raw measurement</td></tr>
+          <tr><td>Disrupt (trigger fault, wait for alert)</td><td>5 min</td><td>7 min</td><td>Measured, five runs now: trigger-to-fired took <strong>260s, 260s, 310s (5m10s), 229s, and 214s</strong> (the last two are the current fault mechanism, the final one from a clean-room run on a verified-fresh agent identity - see the Investigate beat's memory caveat); budget adds command/narration overhead on top of the raw measurement</td></tr>
           <tr><td>Investigate (automated investigation)</td><td>6 min</td><td>10 min</td><td>Measured, all four runs: alert-to-thread 60s/67s/47s/55s + thread-to-report 180s/181s/<strong>383s (6m23s)</strong>/<strong>363s (6m3s)</strong> - two of four runs took over 6 minutes, a recurring split rather than a one-off (see the Investigate beat for the root-caused reasons); budget adds time to read findings aloud</td></tr>
           <tr><td>Act and Verify (agent executes, presenter confirms via Activity Log)</td><td>7 min</td><td>9 min</td><td>Measured, all four runs: investigation-to-rollback 74s/92s/64s/57s + rollback-to-resolution 195s/198s/250s (4m10s)/~185s (newest run, computed from message timestamps, not a directly labctl-reported interval like the other three) - the rollback itself was never the slow part, only the agent's post-rollback narration (see the Act beat); budget adds the presenter's own Activity Log walkthrough and <code>demo verify</code></td></tr>
           <tr><td>Extensibility and cost (Learn)</td><td>3 min</td><td>4 min</td><td>Pending rehearsal confirmation</td></tr>
@@ -255,12 +264,16 @@
       </table>
       <div class="callout" role="note">
         <p><strong>Hard timebox for Disrupt/Investigate/Act combined:</strong>
-          budget 18 minutes as the plan (measured raw total across four real
-          runs: <strong>12m21s, 13m15s, 14m49s, and 17m35s</strong>, median
-          ~14m02s, from trigger to the agent's own resolution summary), but do
+          budget 18 minutes as the plan (measured raw total across four
+          per-phase-instrumented runs: <strong>12m21s, 13m15s, 14m49s, and
+          17m35s</strong>, median ~14m02s, from trigger to the agent's own
+          resolution summary), but do
           not let it silently run past <strong>30 minutes</strong> from the
           moment you run <code>demo trigger</code> - this margin already
-          covers the newest run comfortably. If the alert has not fired by
+          covers the newest run comfortably. A fifth, clean-room run on a
+          verified-fresh agent identity stayed within this same 12-18 minute
+          range at the aggregate level, without its own per-phase timestamps
+          to add to the list above. If the alert has not fired by
           minute 9, or the agent has not executed the rollback within a few
           minutes of a clear investigation conclusion: say so plainly, run
           <code>demo reset bad-deployment</code> yourself as the operator
@@ -529,7 +542,7 @@
           </ul>
         </div>
         <div>
-          <h3>Real measured duration - four runs now</h3>
+          <h3>Real measured duration - four full runs, a fifth confirming</h3>
           <p>Alert fired to investigation thread created:
             <strong>60s, 67s, 47s, and 55s</strong> across all four real runs.
             Thread created to investigation report posted:
@@ -542,7 +555,13 @@
             <a href="../../scenarios/bad-deployment/evidence/act-beat-transcript-2026-07-30.md">2026-07-30
             evidence</a> for the newest one, captured after the fault
             mechanism changed) - do not present the faster figures as
-            typical.</p>
+            typical. A fifth, clean-room run on the verified-fresh agent
+            identity (see the caveat below) confirmed the same order of
+            magnitude at the aggregate level - alert fired about 214s after
+            trigger, <code>demo trigger</code> itself completed in 276s, and
+            the total trigger-to-resolution path stayed within the documented
+            12-18 minute range - without providing its own per-phase
+            breakdown to add to the table above.</p>
         </div>
         <div class="callout" role="note">
           <p><strong>Investigate is the least predictable beat in this demo.
@@ -577,33 +596,60 @@
             promise a specific faster time.</p>
         </div>
         <div class="callout" role="note">
-          <p><strong>Honest caveat: agent memory persistence.</strong> On the
-            2026-07-30 run, the agent began by reading four of its own
-            retained memory files (<code>logs.md</code>,
-            <code>deployment.md</code>, <code>debugging.md</code>,
-            <code>architecture.md</code>) - and every one of them still
-            described the <em>previous</em> fault mechanism
-            (<code>DEMO_FAILURE_MODE=checkout-500</code>, the old alert name).
-            Azure SRE Agent memory persists across runs in this preview, and
-            it had not been corrected since the fault mechanism changed. Each
-            memory read came back with the platform's own built-in staleness
-            warning attached ("Memory records become stale over time ... trust
-            what you observe now"), and the agent's own narration explicitly
-            flagged the mismatch ("a different failure mechanism ... than
-            previous incidents") before it gathered live evidence. Its final,
-            cited evidence was the live revision diff, telemetry, and a source
-            cross-reference that itself caught the connected repository's
-            committed code describing the old mechanism only.</p>
+          <p><strong>Honest caveat: agent memory persistence, now clarified by
+            a clean-room re-test.</strong> On an earlier (2026-07-30) run, the
+            agent began by reading four of its own retained memory files
+            (<code>logs.md</code>, <code>deployment.md</code>,
+            <code>debugging.md</code>, <code>architecture.md</code>) - and
+            every one of them still described the <em>previous</em> fault
+            mechanism (<code>DEMO_FAILURE_MODE=checkout-500</code>, the old
+            alert name). Each memory read came back with the platform's own
+            built-in staleness warning attached ("Memory records become stale
+            over time ... trust what you observe now"), and the agent's own
+            narration explicitly flagged the mismatch ("a different failure
+            mechanism ... than previous incidents") before it gathered live
+            evidence. Its final, cited evidence was the live revision diff,
+            telemetry, and a source cross-reference. At the time, whether the
+            agent could reach the same correct answer starting from a
+            genuinely fresh identity with zero retained memory had not been
+            isolated and tested.</p>
+          <p><strong>It has now been isolated and tested.</strong> The
+            environment was fully destroyed and rebuilt: the rebuilt agent's
+            managed identity and data-plane endpoint were both verified
+            different from the previous ones, and a data-plane thread query
+            against the brand-new identity returned <code>thread_count: 0</code>
+            - zero retained incident threads. That verified-fresh agent then
+            ran both scenarios end to end from a standing start and reached
+            the correct root cause on each; the Azure Activity Log attributes
+            both remediation writes to the new agent identity (see the
+            <a href="../../scenarios/bad-deployment/evidence/act-beat-transcript-2026-07-30-cleanroom-bad-deployment.md">bad-deployment
+            clean-room transcript</a>, 87 thread messages, and the
+            <a href="../../scenarios/canary-regression/evidence/act-beat-transcript-2026-07-30-cleanroom-canary-regression.md">canary-regression
+            clean-room transcript</a>, 43 thread messages).</p>
+          <p>That does not mean memory played no role at all in the
+            clean-room re-test - it means something more interesting.
+            Minutes after the fresh agent resolved the bad-deployment
+            incident, it wrote its own memory record summarizing that fix.
+            Later in the same session, investigating the separate
+            canary-regression incident on the same identity, its memory
+            search surfaced that self-written record - accurate about
+            <code>bad-deployment</code>'s own mechanism, but not applicable to
+            <code>canary-regression</code>'s distinct fault
+            (<code>CHECKOUT_PRICING_PROFILE=strict-decimal</code>). The
+            platform attached its usual staleness disclaimer, and the agent's
+            canary conclusion is drawn from that incident's own live
+            telemetry and revision configuration, not from the mismatched
+            record.</p>
           <p><strong>Say this on stage, do not paper over it:</strong> the
-            runtime, runbook, and skill no longer contain the answer, and the
-            agent's cited reasoning was live comparison and telemetry - but
-            retained preview-memory influence on a run with a fresh, never-
-            used agent identity has not been isolated and tested. That is a
-            genuinely interesting thing to name out loud: memory persistence
-            is a real product behavior, and being explicit that it was present
-            (and that the agent worked around it rather than being fooled by
-            it) is more credible than claiming a completely clean-room
-            diagnosis that was not actually tested.</p>
+            earned-diagnosis claim no longer depends on an untested
+            assumption - it has been validated end to end on an identity
+            proven to start with zero retained incident memory, on both
+            scenarios. And memory persistence across runs is real, genuinely
+            interesting product behavior, worth naming rather than hiding: a
+            presenter re-running this demo on an already-used agent will see
+            its memory accumulate exactly as shown here, and the honest,
+            demonstrable pattern is that the agent treats its own memory as
+            context to verify, not as ground truth.</p>
         </div>
         <div>
           <h3>Expected visible state</h3>
@@ -970,17 +1016,21 @@
               to show a populated result (AGENTS.md requires labeling
               time-dependent features honestly).</li>
             <li>This incident's own knowledge documents were uploaded to the
-              agent's memory during <code>labctl provision</code>. Memory
-              retrieval is now <strong>confirmed working</strong> - not just
-              deployed - by the 2026-07-30 run, which read back its own
-              retained memory at the start of the investigation. That same
-              run is also the honest reason not to oversell this: the
-              retrieved memory still described the <em>previous</em> fault
-              mechanism, days after it changed (see the
-              <a href="#beat-investigate">Investigate</a> beat's memory
-              caveat). Say "retained across runs, and it can go stale - the
-              agent has to reconcile it against live evidence every time," not
-              "retained for next time" as an unqualified positive.</li>
+              agent's memory during <code>labctl provision</code>, and
+              per-incident memory records the agent writes itself persist
+              across runs on the same identity. Memory retrieval is
+              <strong>confirmed working</strong> in two different ways: an
+              earlier (2026-07-30) run read back retained memory that still
+              described the <em>previous</em> fault mechanism, days after it
+              changed (see the <a href="#beat-investigate">Investigate</a>
+              beat's caveat); and a clean-room run on a verified-fresh
+              identity - zero retained incident threads - later surfaced a
+              memory record the agent had itself written minutes earlier, for
+              a different scenario, in the same session. Both are the same
+              honest lesson: say "retained across runs, and it can go stale or
+              turn out irrelevant to the current incident - the agent has to
+              reconcile it against live evidence every time," not "retained
+              for next time" as an unqualified positive.</li>
           </ul>
         </div>
         <div>
@@ -1108,29 +1158,44 @@
             this as <strong>"partial canary degradation, not a total
             outage"</strong>, then query Application Insights/Log Analytics
             grouped by Container App revision. This per-revision breakdown is
-            a <strong>curated excerpt</strong> from the live 2026-07-30 run
-            (<a href="../../scenarios/canary-regression/evidence/act-beat-transcript-2026-07-30.md">the
-            evidence file</a> - a ~164-line summary, not a complete raw
-            export: it omits the underlying KQL queries, full tool responses,
-            and per-minute bins; a complete raw capture is planned separately
-            and this section will be upgraded when it exists):</p>
+            now a <strong>complete raw capture</strong> from a 2026-07-30
+            clean-room run
+            (<a href="../../scenarios/canary-regression/evidence/act-beat-transcript-2026-07-30-cleanroom-canary-regression.md">the
+            clean-room evidence file</a> - 43 thread messages plus the actual
+            KQL queries and the per-minute rows they returned; the earlier
+            <a href="../../scenarios/canary-regression/evidence/act-beat-transcript-2026-07-30.md">2026-07-30
+            summary</a> remains a valid record of an earlier run but is a
+            curated excerpt by comparison):</p>
           <table>
             <thead><tr><th>Revision</th><th>Total requests</th><th>Failed</th><th>Succeeded</th><th>Failure rate</th></tr></thead>
             <tbody>
-              <tr><td>Baseline</td><td>340</td><td>0</td><td>340</td><td><strong>0%</strong></td></tr>
-              <tr><td>Canary</td><td>38</td><td>38</td><td>0</td><td><strong>100%</strong></td></tr>
+              <tr><td>Baseline</td><td>602</td><td>0</td><td>602</td><td><strong>0%</strong></td></tr>
+              <tr><td>Canary</td><td>53</td><td>53</td><td>0</td><td><strong>100%</strong></td></tr>
             </tbody>
           </table>
-          <p>The agent's own quantified blast radius, quoted verbatim: <em>"Overall
-            observed failure rate: ~7-12% per minute, consistent with the
-            canary's 10% traffic weight."</em> The aggregate request counts
-            above do support roughly 10% blast radius; the curated excerpt
-            does not include the per-minute rows behind the "~7-12% per
-            minute" figure itself - say it as the agent's own stated
-            estimate, not as a per-minute result you can show. This
-            per-revision partitioning - not a single aggregate failure rate -
-            is the capability <code>bad-deployment</code> cannot demonstrate,
-            because it never has a healthy revision to contrast against.</p>
+          <p>That is a <strong>8.1% blast radius</strong> (53 of 655 total
+            requests), consistent with the 10% traffic split - computed
+            directly from the Application Insights <code>requests</code>
+            table's <code>itemCount</code>-weighted rows in the clean-room
+            capture, not an estimate. Log Analytics independently shows the
+            same pattern from its own console-log rows: canary 55/55 failed,
+            baseline 0/618 failed. Use <strong>8.1%</strong>, not the earlier
+            "~7-12% per minute" figure, which was the agent's own spoken
+            estimate on a run where the underlying per-minute rows were not
+            captured.</p>
+          <p><strong>One qualification to keep:</strong> the raw capture
+            substantiates the per-revision partition with real queried rows,
+            but the agent did not reach that attribution from telemetry
+            alone - its investigation read the Container App's revision state
+            and the canary's <code>CHECKOUT_PRICING_PROFILE=strict-decimal</code>
+            configuration difference first, then correlated that against the
+            failure concentration. Present this as configuration plus
+            telemetry correlation - the same practice a competent SRE would
+            use - not as a telemetry-only discovery.</p>
+          <p>This per-revision partitioning - not a single aggregate failure
+            rate - is the capability <code>bad-deployment</code> cannot
+            demonstrate, because it never has a healthy revision to contrast
+            against.</p>
         </div>
         <div>
           <h3>Live: minimal mitigation, once the diagnosis is precise</h3>
@@ -1181,10 +1246,15 @@
             does not clear (drain -> Resolved) for about <strong>13
             minutes</strong> on top of that. <code>scenario.yaml</code>
             declares this scene at <strong>20 minutes</strong> (versus 15 for
-            <code>bad-deployment</code>) for exactly this reason. Only one
-            real run has been measured so far - treat every figure above as a
-            single data point, not yet a range, and expect it to run longer
-            live, not shorter.</p>
+            <code>bad-deployment</code>) for exactly this reason. One full
+            per-phase run has been measured so far - treat every figure above
+            as a single data point, not yet a range. A second, independent
+            clean-room run confirmed the same order of magnitude at the
+            aggregate level (<code>demo trigger canary-regression</code> ran
+            438s, and the run followed the same roughly-12-minute
+            trigger-to-summary path once alert and telemetry lag were
+            included) without providing its own per-phase breakdown - expect
+            this scene to run longer live, not shorter.</p>
           <p><strong>Practical guidance:</strong> plan to move on right after
             the agent's own resolution summary (~12 minutes from trigger) -
             do not wait live for the alert to auto-resolve unless you have
@@ -1723,11 +1793,18 @@
         <li><a href="../../scenarios/bad-deployment/evidence/act-beat-transcript-2026-07-30.md">scenarios/bad-deployment/evidence/act-beat-transcript-2026-07-30.md</a>
           - the current fault mechanism's real transcript, quoted in the
           Investigate and Act beats.</li>
+        <li><a href="../../scenarios/bad-deployment/evidence/act-beat-transcript-2026-07-30-cleanroom-bad-deployment.md">scenarios/bad-deployment/evidence/act-beat-transcript-2026-07-30-cleanroom-bad-deployment.md</a>
+          - the clean-room capture on a verified-fresh agent identity
+          (87 thread messages), superseding the two transcripts above for
+          anything describing current behavior.</li>
         <li><a href="../../scenarios/canary-regression/runbook/README.md">scenarios/canary-regression/runbook/README.md</a>
           - the operator-facing runbook for the optional
           <a href="#scene-canary-regression">Canary regression</a> scene.</li>
         <li><a href="../../scenarios/canary-regression/evidence/act-beat-transcript-2026-07-30.md">scenarios/canary-regression/evidence/act-beat-transcript-2026-07-30.md</a>
-          - the real, verbatim transcript the Canary regression scene quotes
+          - a curated summary of an earlier run, still a valid record.</li>
+        <li><a href="../../scenarios/canary-regression/evidence/act-beat-transcript-2026-07-30-cleanroom-canary-regression.md">scenarios/canary-regression/evidence/act-beat-transcript-2026-07-30-cleanroom-canary-regression.md</a>
+          - the complete raw clean-room capture (43 thread messages plus the
+          actual KQL queries and rows) the Canary regression scene now quotes
           from.</li>
       </ul>
       <h3>Official Azure SRE Agent documentation</h3>
