@@ -144,11 +144,18 @@
             baseline. Two scenarios exist now
             (<code>& 'labctl\.venv\Scripts\labctl.exe' demo list</code> shows
             both); <code>demo verify bad-deployment</code> and
-            <code>demo verify canary-regression</code> each independently
-            report <strong>5 passed, 0 warned, 0 failed</strong> when their
-            respective baselines are healthy. Only prepare
-            <code>canary-regression</code> ahead of time if you actually plan
-            to run that optional scene.</p>
+            <code>demo verify canary-regression</code> each run five recovery
+            checks and exit 0 whenever none of them <code>FAIL</code> - read
+            the exit code and each check's status, not a memorized count. On
+            a healthy baseline expect either <strong>5 passed, 0 warned,
+            0 failed</strong>, or <strong>4 passed, 1 warned, 0 failed</strong>
+            if the <code>alert-not-firing</code> check still sees the Azure
+            Monitor alert resolving from an earlier trigger (non-fatal,
+            expected for several minutes and up to ~13 for the canary alert).
+            A <code>WARN</code> means "not yet provable," never "broken"; only
+            a <code>FAIL</code> means the service is genuinely still down.
+            Only prepare <code>canary-regression</code> ahead of time if you
+            actually plan to run that optional scene.</p>
         </li>
         <li>
           <p><strong>Reset the scenario to a clean baseline.</strong></p>
@@ -877,13 +884,33 @@
         <div>
           <h3>Command</h3>
           <pre><code>& 'labctl\.venv\Scripts\labctl.exe' demo verify bad-deployment</code></pre>
-          <p><strong>Expected</strong> (per SPEC.md section 5, scene 6 -
-            confirm exact console output against your build during
-            rehearsal): the checkout user journey succeeds, production
-            traffic targets the known-good revision, the failure rate is
-            back below the alert threshold, the alert has resolved or shows
-            recovery telemetry, and the incident record contains a
-            remediation summary.</p>
+          <p><strong>Expected:</strong> five checks run once traffic is back
+            on the known-good baseline - a fresh post-rollback checkout batch
+            (36 requests driven, 12 required) shows zero HTTP 5xx, traffic is
+            confirmed 100% on baseline, the Container App write that
+            performed the rollback is found in the Activity Log, fresh
+            Application Insights telemetry proves zero 5xx across at least
+            12 itemCount-weighted requests, and the alert is checked for
+            Fired state. This is deliberately stricter than the alert itself
+            required to fire (the alert trips at 5xx count&nbsp;&gt;=&nbsp;3;
+            recovery demands zero 5xx across a much larger fresh sample) -
+            recovery is harder to prove than failure was to declare.</p>
+          <p>Read the <em>result</em>, not a memorized count. A healthy
+            environment reports either <strong>5 passed, 0 warned,
+            0 failed</strong>, or <strong>4 passed, 1 warned, 0 failed</strong>
+            if <code>alert-not-firing</code> still shows the Azure Monitor
+            alert resolving - that lag is normal for a few minutes after a
+            trigger and the command still exits 0. A genuine <code>FAIL</code>
+            is the only signal that means the service is actually still
+            broken. The telemetry check polls Application Insights for up to
+            240s (10s intervals) instead of querying once, so a slow-ingesting
+            environment reports <code>WARN</code> ("recovery is not yet
+            provable from telemetry") rather than a false <code>FAIL</code> -
+            wait and re-run rather than assuming failure. Application
+            Insights sampling is disabled for this workload and every count
+            here is itemCount-weighted, so these are exact request counts,
+            not statistical estimates - a fair point to make if an audience
+            member asks whether the numbers are estimates.</p>
         </div>
         <div>
           <h3>Live cross-check</h3>
@@ -896,11 +923,11 @@
         </div>
         <div>
           <h3>Fallback</h3>
-          <p>If recovery telemetry lags, remember ingestion can take a
-            minute or two (the same bounded-retry behavior
-            <code>labctl verify</code> already uses for the healthy path).
-            Wait briefly and re-run the command before assuming something
-            failed. If traffic did not actually shift, run
+          <p>A <code>WARN</code> on the telemetry check already means the
+            tool is waiting for ingestion (it polls automatically for up to
+            240s) - just re-run the command rather than treating it as a
+            failure. If you instead see a genuine <code>FAIL</code> and
+            traffic did not actually shift, run
             <code>demo reset bad-deployment</code> yourself as the operator
             safety net (it is safe to run any time) and explain the detour
             honestly to the room - the agent's rollback attempt not
@@ -1169,12 +1196,24 @@
         <div>
           <h3>Live: verify recovery</h3>
           <pre><code>& 'labctl\.venv\Scripts\labctl.exe' demo verify canary-regression</code></pre>
-          <p><strong>Expected:</strong> fails while the canary still carries
-            traffic; passes once traffic is 100% on baseline, a fresh
-            checkout batch succeeds, recent Application Insights telemetry
-            for the baseline revision is present, and the alert is no longer
-            Fired. Live-verified: <strong>5 passed, 0 warned, 0 failed</strong>,
-            independent of the agent's own narrative.</p>
+          <p><strong>Expected:</strong> the same five-check recovery path as
+            <code>bad-deployment</code>, sized for this scenario - a fresh
+            post-drain checkout batch (90 requests driven, 30 required) shows
+            zero HTTP 5xx, traffic is confirmed 100% on baseline, the drain
+            write is found in the Activity Log, and fresh itemCount-weighted
+            telemetry proves zero 5xx across at least 30 requests. The fifth
+            check, <code>alert-not-firing</code>, is deliberately non-fatal:
+            this scenario's Application Insights alert took 781s to
+            auto-resolve in the measured run, and demanding resolution before
+            the command could pass would either block for roughly 13 minutes
+            or fail a perfectly healthy environment. So a live run typically
+            reports one of two equally correct results: <strong>5 passed,
+            0 warned, 0 failed</strong> once the alert has finished resolving,
+            or <strong>4 passed, 1 warned, 0 failed</strong> while it is still
+            Fired and resolution is pending. Both mean the same thing -
+            checkout is recovered - read the <code>WARN</code> detail line
+            rather than expecting one fixed count; only a <code>FAIL</code>
+            means the service is actually still broken.</p>
         </div>
         <div class="callout" role="note">
           <p><strong>Honest caveat: source-grounding was not demonstrated on

@@ -993,8 +993,11 @@
       <div class="slide-body">
         <pre class="command-block"><code>& 'labctl\.venv\Scripts\labctl.exe' demo verify canary-regression</code></pre>
         <ul>
-          <li class="fragment">Live-verified: <strong>5 passed, 0 warned,
-            0 failed</strong>, independent of the agent's own narrative.</li>
+          <li class="fragment">Live-verified, independent of the agent's own
+            narrative: <strong>5 passed, 0 warned, 0 failed</strong> once the
+            alert finishes resolving, or <strong>4 passed, 1 warned,
+            0 failed</strong> while it is still Fired - both mean recovered;
+            only a FAIL would mean otherwise.</li>
           <li class="fragment">This scene runs about <strong>12 minutes</strong>
             to the agent's own resolution summary; the Azure Monitor alert
             itself takes about <strong>13 more minutes</strong> to
