@@ -274,29 +274,56 @@ def check_azure_permissions(
     )
 
 
-def check_provider_registration(*, az_runner: azure_cli.AzRunner = azure_cli.run_az) -> CheckResult:
-    data, result = azure_cli.provider_show("Microsoft.App", runner=az_runner)
+# Resource providers required by the demonstration environment: Microsoft.App
+# for the Azure SRE Agent itself, Microsoft.ContainerRegistry for the ACR
+# instance that hosts the workload image, and Microsoft.OperationalInsights
+# for the Log Analytics workspace backing Application Insights/Azure Monitor.
+_REQUIRED_RESOURCE_PROVIDERS = (
+    "Microsoft.App",
+    "Microsoft.ContainerRegistry",
+    "Microsoft.OperationalInsights",
+)
+
+
+def _provider_check_name(namespace: str) -> str:
+    return "provider-" + namespace.lower().replace(".", "-")
+
+
+def check_provider_registration(
+    namespace: str, *, az_runner: azure_cli.AzRunner = azure_cli.run_az
+) -> CheckResult:
+    check_name = _provider_check_name(namespace)
+    data, result = azure_cli.provider_show(namespace, runner=az_runner)
     if data is None:
         return CheckResult(
-            "provider-microsoft-app",
+            check_name,
             Status.FAIL,
-            f"Could not query the Microsoft.App resource provider: {result.diagnostic()}",
+            f"Could not query the {namespace} resource provider: {result.diagnostic()}",
         )
     state = str(data.get("registrationState", "Unknown"))
     if state == "Registered":
-        return CheckResult("provider-microsoft-app", Status.PASS, "Microsoft.App is Registered.")
+        return CheckResult(check_name, Status.PASS, f"{namespace} is Registered.")
     if state == "Registering":
         return CheckResult(
-            "provider-microsoft-app",
+            check_name,
             Status.WARN,
-            "Microsoft.App registration is in progress (Registering). Re-run preflight shortly.",
+            f"{namespace} registration is in progress (Registering). Re-run preflight shortly.",
         )
     return CheckResult(
-        "provider-microsoft-app",
+        check_name,
         Status.FAIL,
-        f"Microsoft.App is not registered (state: {state}). Run "
-        "`az provider register --namespace Microsoft.App`.",
+        f"{namespace} is not registered (state: {state}). Run "
+        f"`az provider register --namespace {namespace}`.",
     )
+
+
+def check_provider_registrations(
+    *, az_runner: azure_cli.AzRunner = azure_cli.run_az
+) -> list[CheckResult]:
+    return [
+        check_provider_registration(namespace, az_runner=az_runner)
+        for namespace in _REQUIRED_RESOURCE_PROVIDERS
+    ]
 
 
 def check_agent_region_support(
@@ -484,7 +511,7 @@ def run_preflight(config: Config) -> list[CheckResult]:
     results.extend(check_tool_versions(terraform_cwd=config.repo_root))
     results.append(check_azure_login(config))
     results.append(check_azure_permissions(config))
-    results.append(check_provider_registration())
+    results.extend(check_provider_registrations())
     results.append(check_agent_region_support(config))
     results.append(check_agent_model_availability(config))
     results.append(check_github_auth())
@@ -520,6 +547,7 @@ __all__ = [
     "check_azure_login",
     "check_azure_permissions",
     "check_provider_registration",
+    "check_provider_registrations",
     "check_agent_region_support",
     "check_agent_model_availability",
     "check_github_auth",

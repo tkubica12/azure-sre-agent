@@ -1,11 +1,13 @@
 # Terraform and provider version pins for the Azure SRE Agent demonstration.
 #
-# Versions are pinned deliberately (see AGENTS.md "Infrastructure as code").
-# Bump them intentionally, re-run `terraform init -upgrade`, and re-validate
-# rather than floating on a range.
+# Provider versions are pinned deliberately (see AGENTS.md "Infrastructure as
+# code"). Bump them intentionally, re-run `terraform init -upgrade`, and
+# re-validate rather than floating on a range. The Terraform CLI itself uses
+# a minimum-version floor instead of an exact pin so any Terraform release at
+# or above the validated 1.10.1 baseline is accepted.
 
 terraform {
-  required_version = "= 1.10.1"
+  required_version = ">= 1.10.1"
 
   required_providers {
     azurerm = {
