@@ -96,15 +96,19 @@
           <strong>&lt;your-subscription&gt;</strong>.</li>
         <li>GitHub CLI, logged in (<code>gh auth login</code>) with the
           <code>repo</code> scope.</li>
-        <li>Terraform <strong>exactly 1.10.1</strong> on <code>PATH</code>
-          (<code>infra/environments/demo/versions.tf</code> pins
-          <code>required_version = "= 1.10.1"</code>). A newer system-wide
-          Terraform is a real, live-observed failure mode: a repeat
-          <code>labctl deploy</code> failed outright when the machine's
-          Terraform had drifted to 1.15.8. If your machine has a different
-          version installed globally, download 1.10.1 and prepend its
-          directory to <code>PATH</code> for the session rather than
-          reinstalling system-wide.</li>
+        <li>Terraform <strong>1.10.1 or newer</strong> on <code>PATH</code>
+          (<code>infra/environments/demo/versions.tf</code> sets
+          <code>required_version = "&gt;= 1.10.1"</code>). Provider versions
+          stay pinned exactly, so only the Terraform CLI itself floats above
+          the validated 1.10.1 baseline. If your machine has an older
+          Terraform installed globally, download 1.10.1 (or newer) and
+          prepend its directory to <code>PATH</code> for the session rather
+          than reinstalling system-wide.</li>
+        <li>The <code>Microsoft.App</code>, <code>Microsoft.ContainerRegistry</code>,
+          and <code>Microsoft.OperationalInsights</code> resource providers
+          registered on the target subscription. All three are mandatory -
+          <code>labctl preflight</code> queries each one's registration state
+          independently and fails if any is not <code>Registered</code>.</li>
         <li><code>config.local.toml</code> present (copied from
           <code>config.example.toml</code>, git-ignored).</li>
       </ul>

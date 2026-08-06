@@ -26,6 +26,7 @@ from labctl.preflight import (
     check_local_state_paths,
     check_network_dns,
     check_provider_registration,
+    check_provider_registrations,
     check_tool_versions,
     summarize,
 )
@@ -209,17 +210,53 @@ def test_check_azure_permissions_warns_when_object_id_unavailable(
 
 
 @pytest.mark.parametrize(
+    "namespace",
+    ["Microsoft.App", "Microsoft.ContainerRegistry", "Microsoft.OperationalInsights"],
+)
+@pytest.mark.parametrize(
     ("state", "expected_status"),
     [("Registered", Status.PASS), ("Registering", Status.WARN), ("NotRegistered", Status.FAIL)],
 )
 def test_check_provider_registration_states(
-    result_factory, state: str, expected_status: Status
+    result_factory, namespace: str, state: str, expected_status: Status
 ) -> None:
     result = result_factory(stdout=f'{{"registrationState": "{state}"}}')
 
-    check_result = check_provider_registration(az_runner=lambda args, **kwargs: result)
+    check_result = check_provider_registration(namespace, az_runner=lambda args, **kwargs: result)
 
     assert check_result.status == expected_status
+    assert check_result.name == "provider-" + namespace.lower().replace(".", "-")
+
+
+def test_check_provider_registration_fails_on_query_error(result_factory) -> None:
+    result = result_factory(returncode=1, stderr="boom")
+
+    check_result = check_provider_registration(
+        "Microsoft.App", az_runner=lambda args, **kwargs: result
+    )
+
+    assert check_result.status == Status.FAIL
+    assert check_result.name == "provider-microsoft-app"
+
+
+def test_check_provider_registrations_covers_all_required_providers(result_factory) -> None:
+    def fake_runner(args, **kwargs):
+        namespace = args[args.index("--namespace") + 1] if "--namespace" in args else None
+        state = {
+            "Microsoft.App": "Registered",
+            "Microsoft.ContainerRegistry": "Registering",
+            "Microsoft.OperationalInsights": "NotRegistered",
+        }.get(namespace, "Unknown")
+        return result_factory(stdout=f'{{"registrationState": "{state}"}}')
+
+    results = check_provider_registrations(az_runner=fake_runner)
+
+    by_name = {r.name: r.status for r in results}
+    assert by_name == {
+        "provider-microsoft-app": Status.PASS,
+        "provider-microsoft-containerregistry": Status.WARN,
+        "provider-microsoft-operationalinsights": Status.FAIL,
+    }
 
 
 def test_check_agent_region_support_pass(tmp_path: Path, result_factory) -> None:
@@ -417,8 +454,12 @@ def test_run_preflight_returns_a_result_for_every_check_area(
     )
     monkeypatch.setattr(
         preflight_module,
-        "check_provider_registration",
-        lambda **kwargs: stub("provider-microsoft-app"),
+        "check_provider_registrations",
+        lambda **kwargs: [
+            stub("provider-microsoft-app"),
+            stub("provider-microsoft-containerregistry"),
+            stub("provider-microsoft-operationalinsights"),
+        ],
     )
     monkeypatch.setattr(
         preflight_module,
@@ -451,6 +492,8 @@ def test_run_preflight_returns_a_result_for_every_check_area(
         "azure-login",
         "azure-permissions",
         "provider-microsoft-app",
+        "provider-microsoft-containerregistry",
+        "provider-microsoft-operationalinsights",
         "agent-region-support",
         "agent-model-availability",
         "github-auth",

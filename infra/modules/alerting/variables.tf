@@ -79,6 +79,17 @@ variable "frequency" {
   default     = "PT1M"
 }
 
+variable "canary_frequency" {
+  description = "ISO 8601 evaluation frequency for the canary-regression scheduled query alert. Azure Monitor rejects one-minute frequency for log alert rules that do not query a small set of known tables (error `QueryNotContainKnownTable`), so this defaults to five minutes independently of the metric alert's `frequency`. See https://aka.ms/lsa_1m_limits."
+  type        = string
+  default     = "PT5M"
+
+  validation {
+    condition     = contains(["PT1M", "PT5M", "PT10M", "PT15M", "PT30M", "PT45M", "PT1H", "PT2H", "PT3H", "PT4H", "PT5H", "PT6H", "P1D"], var.canary_frequency)
+    error_message = "canary_frequency must be a supported Azure Monitor scheduled query rule evaluation frequency."
+  }
+}
+
 variable "tags" {
   description = "Tags applied to both resources so ownership and cleanup scope are provable."
   type        = map(string)

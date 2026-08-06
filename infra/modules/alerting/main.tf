@@ -64,7 +64,7 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "canary_regression" {
   description             = "PulseMart checkout failure rate is elevated during a canary release; partition failures by Container App revision before acting."
   severity                = var.severity
   enabled                 = true
-  evaluation_frequency    = var.frequency
+  evaluation_frequency    = var.canary_frequency
   window_duration         = var.window_size
   auto_mitigation_enabled = true
   tags                    = var.tags
